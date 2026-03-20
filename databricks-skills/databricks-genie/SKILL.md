@@ -1,11 +1,11 @@
 ---
 name: databricks-genie
-description: "Create, configure, and query Databricks Genie Spaces for natural language SQL exploration. Use when building Genie Spaces, configuring advanced instructions/joins/filters/measures via the Databricks Python SDK, or asking questions via the Genie Conversation API."
+description: "Create, configure, and query Databricks Genie Spaces for natural language SQL exploration. Use when building Genie Spaces, configuring advanced instructions/joins/filters/measures via the Databricks Python SDK, exporting and importing Genie Spaces, or asking questions via the Genie Conversation API."
 ---
 
 # Databricks Genie
 
-Create and query Databricks Genie Spaces - natural language interfaces for SQL-based data exploration.
+Create, manage, and query Databricks Genie Spaces - natural language interfaces for SQL-based data exploration.
 
 ## Overview
 
@@ -19,6 +19,12 @@ Use this skill when:
 - Adding sample questions to guide users
 - Connecting Unity Catalog tables to a conversational interface
 - Asking questions to a Genie Space programmatically (Conversation API)
+- Exporting a Genie Space configuration (serialized_space) for backup or migration
+- Importing / cloning a Genie Space from a serialized payload
+- Migrating a Genie Space between workspaces or environments (dev → staging → prod)
+    - Only supports catalog remapping where catalog names differ across environments
+    - Not supported for schema and/or table names that differ across environments
+    - Not including migration of tables between environments (only migration of Genie Spaces)
 
 ## Approach Options
 
@@ -62,6 +68,7 @@ For interactive development with Claude Code, MCP tools are available:
 | `ask_genie` | Ask questions to a space |
 | `get_table_details` | Inspect table schemas |
 | `list_genie`, `get_genie`, `delete_genie` | Space management |
+| `migrate_genie` | Export (`type="export"`) or import (`type="import"`) a Genie Space for cloning / migration |
 
 **Benefits**: No setup, works directly in Claude Code, fast prototyping
 
@@ -117,7 +124,7 @@ create_or_update_genie(
 ask_genie(space_id="your_space_id", question="What were total sales last month?")
 ```
 
-## Workflow
+### 4. Export & Import (Clone / Migrate)
 
 ### SDK/CLI Workflow (Recommended)
 
@@ -142,6 +149,33 @@ ask_genie(space_id="your_space_id", question="What were total sales last month?"
 ```
 
 **Benefits**: No code setup, works directly in Claude Code, fast prototyping
+Export a space (preserves all tables, instructions, SQL examples, and layout):
+
+### Migration
+
+```python
+exported = migrate_genie(type="export", space_id="your_space_id")
+# exported["serialized_space"] contains the full config
+```
+
+Clone to a new space (same catalog):
+
+```python
+migrate_genie(
+    type="import",
+    warehouse_id=exported["warehouse_id"],
+    serialized_space=exported["serialized_space"],
+    title=exported["title"],  # override title; omit to keep original
+    description=exported["description"],
+)
+```
+
+> **Cross-workspace migration:** Each MCP server is workspace-scoped. Configure one server entry per workspace profile in your IDE's MCP config, then `migrate_genie(type="export")` from the source server and `migrate_genie(type="import")` via the target server. See [spaces.md §Migration](spaces.md#migrating-across-workspaces-with-catalog-remapping) for the full workflow.
+
+## Reference Files
+
+- [spaces.md](spaces.md) - Creating and managing Genie Spaces
+- [conversation.md](conversation.md) - Asking questions via the Conversation API
 
 ## Prerequisites
 
@@ -177,3 +211,11 @@ export DATABRICKS_TOKEN="dapi..."
 | **No warehouse available** | Create a SQL warehouse or provide `warehouse_id` explicitly |
 | **Poor query generation** | Configure instructions, joins, filters, dimensions, measures, and example queries via the [Databricks Python SDK](space-configuration.md) |
 | **Slow queries** | Ensure warehouse is running; use OPTIMIZE on tables |
+See [spaces.md §Troubleshooting](spaces.md#troubleshooting) for a full list of issues and solutions.
+
+## Related Skills
+
+- **[databricks-agent-bricks](../databricks-agent-bricks/SKILL.md)** - Use Genie Spaces as agents inside Supervisor Agents
+- **[databricks-synthetic-data-gen](../databricks-synthetic-data-gen/SKILL.md)** - Generate raw parquet data to populate tables for Genie
+- **[databricks-spark-declarative-pipelines](../databricks-spark-declarative-pipelines/SKILL.md)** - Build bronze/silver/gold tables consumed by Genie Spaces
+- **[databricks-unity-catalog](../databricks-unity-catalog/SKILL.md)** - Manage the catalogs, schemas, and tables Genie queries

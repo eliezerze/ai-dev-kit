@@ -67,14 +67,14 @@ Agent evaluation runs a real Claude Code instance via the [Claude Agent SDK](htt
 }
 ```
 
-| Field | Purpose |
-|-------|---------|
-| `ANTHROPIC_MODEL` | Default model the agent uses |
-| `ANTHROPIC_BASE_URL` | Claude API endpoint (Databricks AI Gateway or direct) |
-| `ANTHROPIC_AUTH_TOKEN` | Auth token — supports `${VAR:-default}` interpolation |
-| `ANTHROPIC_CUSTOM_HEADERS` | Extra headers (e.g., coding agent mode for Databricks) |
-| `DATABRICKS_CONFIG_PROFILE` | Databricks CLI profile for MCP tools |
-| `DATABRICKS_API_KEY` | Databricks token for MCP tool calls |
+| Field | Purpose                                                                 |
+|-------|-------------------------------------------------------------------------|
+| `ANTHROPIC_MODEL` | Default model the agent uses. Currently points to Databricks by default |
+| `ANTHROPIC_BASE_URL` | Claude API endpoint (Databricks AI Gateway or direct)                   |
+| `ANTHROPIC_AUTH_TOKEN` | Auth token — supports `${VAR:-default}` interpolation                   |
+| `ANTHROPIC_CUSTOM_HEADERS` | Extra headers (e.g., coding agent mode for Databricks)                  |
+| `DATABRICKS_CONFIG_PROFILE` | Databricks CLI profile for MCP tools                                    |
+| `DATABRICKS_API_KEY` | Databricks token for MCP tool calls                                     |
 
 The `${VAR:-default}` syntax lets you reference environment variables with fallbacks. The agent runs with `bypassPermissions` mode so it doesn't prompt for tool approval.
 
@@ -187,7 +187,7 @@ uv run python .test/scripts/optimize.py <skill_name> [options]
 |------|---------|---------|---------|
 | `--gen-model` | `GEPA_GEN_LM` | `databricks/databricks-claude-sonnet-4-6` | Generates responses in proxy evaluator |
 | `--reflection-lm` | `GEPA_REFLECTION_LM` | `databricks/databricks-claude-opus-4-6` | GEPA's reflection/mutation model |
-| `--judge-model` | `GEPA_JUDGE_LM` | `databricks/databricks-claude-sonnet-4-6` | MLflow quality/regression judges |
+| `--judge-model` | `GEPA_JUDGE_LM` | `databricks/databricks-claude-sonnet-4-6` | MLflow quality judge |
 
 Proxy evaluator models use [litellm provider prefixes](https://docs.litellm.ai/docs/providers): `databricks/`, `openai/`, `anthropic/`.
 
@@ -277,8 +277,8 @@ test_cases:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `inputs.prompt` | Yes | The user question |
-| `expectations.expected_facts` | Yes | Facts the response must contain (checked by quality judge) |
-| `expectations.expected_patterns` | No | Regex patterns checked deterministically |
+| `expectations.expected_facts` | Yes | Facts the response must contain (checked by quality judge + deterministic substring match) |
+| `expectations.expected_patterns` | No | Regex patterns checked deterministically (feeds `fact_coverage`/`pattern_adherence` scores) |
 | `expectations.guidelines` | No | Soft rules for the quality judge |
 | `expectations.trace_expectations` | No | Agent behavioral validation (only with `--agent-eval`) |
 | `outputs.response` | No | Reference answer for judge comparison |
@@ -311,10 +311,153 @@ Without `--tool-modules`, all skills are included regardless. Available modules:
 
 ---
 
+## Evaluation Criteria
+
+Evaluation criteria are domain-specific rubrics that judges can load on demand when scoring traces. They live in `.test/eval-criteria/` as SKILL.md files — the same format used by agent skills.
+
+### Directory structure
+
+Each criteria is a folder containing a `SKILL.md` (YAML frontmatter + markdown body) and an optional `references/` directory with detailed rubrics:
+
+```
+eval-criteria/
+├── general-quality/          # Always loaded (applies_to: [])
+│   └── SKILL.md
+├── sql-correctness/          # Loaded for SQL-related skills (applies_to: [sql])
+│   ├── SKILL.md
+│   └── references/
+│       └── DATABRICKS_SQL_PATTERNS.md
+└── tool-selection/           # Always loaded (applies_to: [])
+    ├── SKILL.md
+    └── references/
+        └── MCP_TOOL_GUIDE.md
+```
+
+### How it works
+
+`discover_skill_paths()` in `judges.py` scans `.test/eval-criteria/` for subdirectories containing a `SKILL.md` file, filtering by `applies_to` metadata against the skill's `tool_modules`. The discovered paths are passed to `make_judge(skills=[...])` when MLflow supports the native `skills=` parameter, enabling on-demand loading of domain-specific rubrics during scoring.
+
+### `applies_to` filtering
+
+The `applies_to` metadata field controls which criteria are available based on the skill's `tool_modules`:
+
+- **`applies_to: [sql]`** — loaded only when the skill declares `tool_modules: [sql]`
+- **`applies_to: []`** (or omitted) — always loaded (general-purpose criteria)
+
+### Adding a new criteria
+
+1. Create a folder: `.test/eval-criteria/<criteria-name>/`
+2. Add `SKILL.md` with YAML frontmatter:
+   ```yaml
+   ---
+   name: my-criteria
+   description: >
+     One-line description of when this criteria applies.
+   metadata:
+     category: evaluation
+     version: "1.0"
+     applies_to: [sql, compute]  # Empty list = always loaded
+   ---
+
+   ## Rubric content here...
+   ```
+3. Optionally add `references/` with detailed `.md` files
+4. The criteria will be auto-discovered on the next evaluation run
+
+For technical details on how criteria are loaded and injected, see [TECHNICAL.md — Adaptive Evaluation Criteria](TECHNICAL.md#adaptive-evaluation-criteria).
+
+---
+
+## Evaluation & Scoring
+
+### SkillBench evaluator (default)
+
+Each candidate skill is evaluated per-task using a WITH vs WITHOUT comparison:
+
+1. **Generate WITH-skill response** — LLM generates with SKILL.md in context
+2. **Generate WITHOUT-skill response** — LLM generates without skill (cached)
+3. **Three focused field-based judges** — each makes 1 LLM call and returns binary `"yes"` / `"no"` verdicts:
+   - **Correctness judge** (WITH + WITHOUT) — facts, API references, code syntax accuracy
+   - **Completeness judge** (WITH + WITHOUT) — all parts addressed, expected info present
+   - **Guideline adherence judge** (WITH only) — Databricks-specific patterns and practices
+   - **Regression judge** (conditional) — fires only when effectiveness delta < -0.05
+4. **Deterministic assertions** (0 LLM calls) — `assertions.py` checks `expected_facts` (substring match) and `expected_patterns` (regex match) against both responses
+
+**Cost per task:** 5 LLM calls (correctness×2 + completeness×2 + guideline_adherence×1). WITHOUT calls are cached, so subsequent iterations cost only 3 calls.
+
+**Scoring weights:**
+
+| Component | Weight | Source |
+|-----------|--------|--------|
+| Effectiveness delta | 30% | Mean of (correctness_delta + completeness_delta) |
+| Quality composite | 20% | Mean of (correctness + completeness + guideline_adherence) WITH scores |
+| Fact/pattern coverage | 15% | Deterministic assertions from `assertions.py` |
+| Guideline adherence | 10% | Dedicated weight for Databricks patterns |
+| Token efficiency | 10% | Smaller candidates score higher |
+| Structure | 5% | Syntax validation (Python, SQL, no hallucinated APIs) |
+| Regression penalty | -10% | Explicit penalty when regression_judge detects harm |
+
+**Binary-to-float conversion:** `yes=1.0`, `no=0.0`. Binary verdicts produce more reliable, consistent judgments than categorical or continuous scales.
+
+### How GEPA uses evaluation feedback
+
+GEPA's reflection LM reads `side_info` rendered as markdown headers. Key fields:
+
+- **`Judge_correctness_with`** / **`Judge_correctness_without`** — per-dimension accuracy feedback with categorical verdicts
+- **`Judge_completeness_with`** / **`Judge_completeness_without`** — per-dimension coverage feedback
+- **`Judge_guideline_adherence`** — pattern compliance feedback (WITH only)
+- **`Judge_effectiveness`** — per-dimension deltas (`correctness_delta`, `completeness_delta`, `overall_delta`)
+- **`Regression_Analysis`** — specific "what to fix" guidance (only when regression detected)
+- **`Missing_Facts`** / **`Missing_Patterns`** — exact list of what the skill should add (from assertions)
+- **`Passed_Facts`** / **`Passed_Patterns`** — what the skill already covers
+- **`scores`** — feeds GEPA's multi-objective Pareto frontier (`correctness_with`, `completeness_with`, `guideline_adherence`, `quality_composite`, etc.)
+
+This gives GEPA three independent, actionable signals. A mutation that fixes correctness but doesn't help completeness shows clear movement on one dimension, guiding the next mutation.
+
+### Why three judges (not one, not five)?
+
+The previous single quality judge collapsed 5 criteria into one 0.0–1.0 score. When a mutation improved correctness but hurt completeness, the score barely moved — GEPA couldn't distinguish which dimension improved. Three judges cover the core evaluation dimensions without excessive cost:
+
+1. **Correctness** → fix errors (API syntax, deprecated patterns)
+2. **Completeness** → add missing content
+3. **Guideline adherence** → align with Databricks patterns + `--focus` areas
+
+Deterministic assertions in `assertions.py` remain for precise, structured `Missing_Facts` lists at zero LLM cost.
+
+### Agent evaluator (`--agent-eval`)
+
+Runs a real Claude Code agent and adds tool-call scoring:
+
+| Component | Weight |
+|-----------|--------|
+| Effectiveness delta | 20% |
+| Correctness | 20% |
+| Completeness | 15% |
+| Guideline adherence | 15% |
+| Assertion coverage | 15% |
+| Execution success | 5% |
+| Token efficiency | 5% |
+| Regression penalty | -5% |
+
+The agent evaluator uses the same focused field-based judges as the proxy evaluator, plus `assertions.py` for structured `Missing_Facts`/`Missing_Patterns` feedback and deterministic trace scorers for behavioral compliance.
+
+---
+
 ## Project Structure
 
 ```
 .test/
+├── eval-criteria/                  # Domain-specific judge rubrics
+│   ├── general-quality/
+│   │   └── SKILL.md
+│   ├── sql-correctness/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   │       └── DATABRICKS_SQL_PATTERNS.md
+│   └── tool-selection/
+│       ├── SKILL.md
+│       └── references/
+│           └── MCP_TOOL_GUIDE.md
 ├── scripts/
 │   └── optimize.py              # CLI entry point
 ├── claude_agent_settings.json   # Claude Code agent environment config
@@ -325,8 +468,9 @@ Without `--tool-modules`, all skills are included regardless. Available modules:
 │       ├── runner.py            # Multi-pass GEPA orchestrator
 │       ├── skillbench_evaluator.py  # Fast proxy evaluator (WITH vs WITHOUT)
 │       ├── agent_evaluator.py   # Real Claude Code agent evaluator
+│       ├── assertions.py        # Deterministic fact/pattern assertions (zero LLM cost)
 │       ├── assessment_fetcher.py # MLflow assessment injection
-│       ├── judges.py            # MLflow judge factories + fallback chain
+│       ├── judges.py            # MLflow quality judge factory + fallback chain
 │       ├── config.py            # Presets, model registration
 │       ├── splitter.py          # Train/val dataset splitting
 │       ├── tools.py             # MCP tool description extraction
