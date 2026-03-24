@@ -45,7 +45,7 @@ def create_pipeline(
         catalog: Unity Catalog name
         schema: Schema name for output tables
         workspace_file_paths: List of workspace .sql or .py file paths
-        extra_settings: Additional settings (clusters, photon, serverless, tags, etc.)
+        extra_settings: Additional pipeline settings dict
 
     Returns:
         Dict with pipeline_id.
@@ -115,7 +115,7 @@ def update_pipeline(
         catalog: New catalog name
         schema: New schema name
         workspace_file_paths: New list of .sql or .py file paths
-        extra_settings: Additional settings (clusters, photon, serverless, tags, etc.)
+        extra_settings: Additional pipeline settings dict
 
     Returns:
         Dict with status.
@@ -238,7 +238,7 @@ def stop_pipeline(pipeline_id: str) -> Dict[str, str]:
 def get_pipeline_events(
     pipeline_id: str,
     max_results: int = 5,
-    filter: str = "level in ('ERROR', 'WARN')",
+    event_log_level: str = "WARN",
     update_id: str = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -247,13 +247,21 @@ def get_pipeline_events(
     Args:
         pipeline_id: Pipeline ID
         max_results: Max events to return (default: 5)
-        filter: Filter expression (default: "level in ('ERROR', 'WARN')")
+        event_log_level: ERROR, WARN (includes ERROR), or INFO (all events)
         update_id: Filter to specific update
 
     Returns:
         List of event dicts with error details.
     """
-    events = _get_pipeline_events(pipeline_id=pipeline_id, max_results=max_results, filter=filter, update_id=update_id)
+    # Convert log level to filter expression
+    level_filters = {
+        "ERROR": "level='ERROR'",
+        "WARN": "level in ('ERROR', 'WARN')",
+        "INFO": "",  # No filter = all events
+    }
+    filter_expr = level_filters.get(event_log_level.upper(), level_filters["WARN"])
+
+    events = _get_pipeline_events(pipeline_id=pipeline_id, max_results=max_results, filter=filter_expr, update_id=update_id)
     return [e.as_dict() if hasattr(e, "as_dict") else vars(e) for e in events]
 
 
@@ -283,7 +291,7 @@ def create_or_update_pipeline(
         wait_for_completion: Wait for run to complete
         full_refresh: Full refresh when starting (default: True)
         timeout: Max wait time in seconds (default: 1800)
-        extra_settings: Additional settings (clusters, photon, serverless, tags, etc.)
+        extra_settings: Additional pipeline settings dict
 
     Returns:
         Dict with pipeline_id, created (bool), success, state, error_summary if failed.
