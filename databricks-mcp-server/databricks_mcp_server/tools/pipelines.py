@@ -166,6 +166,7 @@ def start_update(
     validate_only: bool = False,
     wait: bool = True,
     timeout: int = 300,
+    full_error_details: bool = False,
 ) -> Dict[str, Any]:
     """
     Start a pipeline update or dry-run validation.
@@ -179,6 +180,8 @@ def start_update(
         wait: If True (default), wait for the update to complete and return results.
             If False, return immediately with just the update_id.
         timeout: Maximum wait time in seconds (default: 300 = 5 minutes)
+        full_error_details: If True, return full error events with stack traces.
+            If False (default), return only concise error messages in error_summary.
 
     Returns:
         Dictionary with:
@@ -187,7 +190,8 @@ def start_update(
             - state: Final state (COMPLETED, FAILED, CANCELED)
             - success: True if completed successfully
             - duration_seconds: Total time taken
-            - errors: List of error/warning events if failed
+            - error_summary: List of concise error messages if failed
+            - errors: Full error events (only if full_error_details=True)
     """
     return _start_update(
         pipeline_id=pipeline_id,
@@ -197,6 +201,7 @@ def start_update(
         validate_only=validate_only,
         wait=wait,
         timeout=timeout,
+        full_error_details=full_error_details,
     )
 
 
@@ -205,6 +210,7 @@ def get_update(
     pipeline_id: str,
     update_id: str,
     include_config: bool = False,
+    full_error_details: bool = False,
 ) -> Dict[str, Any]:
     """
     Get pipeline update status and results.
@@ -216,6 +222,8 @@ def get_update(
         update_id: Update ID from start_update
         include_config: If True, include the full pipeline configuration in the response.
             Default is False since the config is very large and verbose.
+        full_error_details: If True, return full error events with stack traces.
+            If False (default), return only concise error messages in error_summary.
 
     Returns:
         Dictionary with:
@@ -224,10 +232,16 @@ def get_update(
         - success: True if completed successfully, False if failed, None if still running
         - cause: What triggered the update
         - creation_time: When the update was created
-        - errors: List of ERROR/WARN events if the update failed
+        - error_summary: List of concise error messages if failed
+        - errors: Full error events (only if full_error_details=True)
         - config: Pipeline configuration (only if include_config=True)
     """
-    return _get_update(pipeline_id=pipeline_id, update_id=update_id, include_config=include_config)
+    return _get_update(
+        pipeline_id=pipeline_id,
+        update_id=update_id,
+        include_config=include_config,
+        full_error_details=full_error_details,
+    )
 
 
 @mcp.tool

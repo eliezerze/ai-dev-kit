@@ -114,8 +114,42 @@ def _build_libraries(workspace_file_paths: List[str]) -> List[PipelineLibrary]:
     return [PipelineLibrary(file=FileLibrary(path=path)) for path in workspace_file_paths]
 
 
+def _extract_error_summary(events: List[PipelineEvent]) -> List[str]:
+    """
+    Extract concise error messages from pipeline events.
+
+    Returns a deduplicated list of error messages, trying multiple fallbacks:
+    1. First exception message from error.exceptions (most detailed)
+    2. Event message (always present, e.g., "Update X is FAILED")
+
+    This is the default for MCP tools since full stack traces are too verbose.
+    """
+    summaries = []
+    for event in events:
+        message = None
+
+        # Try to get detailed exception message first
+        if event.error and event.error.exceptions:
+            for exc in event.error.exceptions:
+                if exc.message:
+                    short_class = (exc.class_name or "Error").split(".")[-1]
+                    message = f"{short_class}: {exc.message}"
+                    break  # Take the first exception with a message
+
+        # Fall back to event message if no exception message found
+        if not message and event.message:
+            message = str(event.message)
+
+        if message:
+            summaries.append(message)
+
+    # Deduplicate while preserving order
+    seen = set()
+    return [s for s in summaries if not (s in seen or seen.add(s))]
+
+
 def _extract_error_details(events: List[PipelineEvent]) -> List[Dict[str, Any]]:
-    """Extract error details from pipeline events for LLM consumption."""
+    """Extract full error details from pipeline events (includes stack traces)."""
     errors = []
     for event in events:
         if event.error:
@@ -356,6 +390,7 @@ def start_update(
     wait: bool = True,
     timeout: int = 300,
     poll_interval: int = 5,
+    full_error_details: bool = False,
 ) -> Dict[str, Any]:
     """
     Start a pipeline update or dry-run validation.
@@ -370,6 +405,8 @@ def start_update(
             If False, return immediately with just the update_id.
         timeout: Maximum wait time in seconds (default: 300 = 5 minutes)
         poll_interval: Time between status checks in seconds (default: 5)
+        full_error_details: If True, return full error events with stack traces.
+            If False (default), return only concise error messages.
 
     Returns:
         Dictionary with:
@@ -378,7 +415,8 @@ def start_update(
             - state: Final state (COMPLETED, FAILED, CANCELED)
             - success: True if completed successfully
             - duration_seconds: Total time taken
-            - errors: List of error/warning events if failed (from get_pipeline_events)
+            - error_summary: List of concise error messages (default)
+            - errors: Full error events with stack traces (only if full_error_details=True)
     """
     w = get_workspace_client()
 
@@ -407,11 +445,9 @@ def start_update(
                 "state": "TIMEOUT",
                 "success": False,
                 "duration_seconds": round(elapsed, 2),
-                "errors": [
-                    {
-                        "message": f"Pipeline update did not complete within {timeout} seconds. "
-                        f"Check status with get_update(pipeline_id='{pipeline_id}', update_id='{update_id}')."
-                    }
+                "error_summary": [
+                    f"Pipeline update did not complete within {timeout} seconds. "
+                    f"Check status with get_update(pipeline_id='{pipeline_id}', update_id='{update_id}')."
                 ],
             }
 
@@ -430,7 +466,6 @@ def start_update(
                 "state": state.value if state else None,
                 "success": state == UpdateInfoState.COMPLETED,
                 "duration_seconds": round(elapsed, 2),
-                "errors": [],
             }
 
             # If failed, get error/warning events for this specific update
@@ -441,7 +476,9 @@ def start_update(
                     filter="level in ('ERROR', 'WARN')",
                     update_id=update_id,
                 )
-                result["errors"] = [e.as_dict() if hasattr(e, "as_dict") else vars(e) for e in events]
+                result["error_summary"] = _extract_error_summary(events)
+                if full_error_details:
+                    result["errors"] = [e.as_dict() if hasattr(e, "as_dict") else vars(e) for e in events]
 
             return result
 
@@ -452,6 +489,7 @@ def get_update(
     pipeline_id: str,
     update_id: str,
     include_config: bool = False,
+    full_error_details: bool = False,
 ) -> Dict[str, Any]:
     """
     Get pipeline update status and results.
@@ -463,6 +501,8 @@ def get_update(
         update_id: Update ID from start_update
         include_config: If True, include the full pipeline configuration in the response.
             Default is False since the config is very large and verbose.
+        full_error_details: If True, return full error events with stack traces.
+            If False (default), return only concise error messages.
 
     Returns:
         Dictionary with:
@@ -471,7 +511,8 @@ def get_update(
         - success: True if completed successfully, False if failed, None if still running
         - cause: What triggered the update (USER_ACTION, RETRY_ON_FAILURE, etc.)
         - creation_time: When the update was created
-        - errors: List of ERROR/WARN events if the update failed (empty otherwise)
+        - error_summary: List of concise error messages (default)
+        - errors: Full error events with stack traces (only if full_error_details=True)
         - config: Pipeline configuration (only if include_config=True)
     """
     w = get_workspace_client()
@@ -479,7 +520,7 @@ def get_update(
 
     update_info = response.update
     if not update_info:
-        return {"update_id": update_id, "state": None, "success": None, "errors": []}
+        return {"update_id": update_id, "state": None, "success": None}
 
     state = update_info.state
 
@@ -496,7 +537,6 @@ def get_update(
         "success": success,
         "cause": update_info.cause.value if update_info.cause else None,
         "creation_time": update_info.creation_time,
-        "errors": [],
     }
 
     # If failed, get error/warning events for this specific update
@@ -507,7 +547,9 @@ def get_update(
             filter="level in ('ERROR', 'WARN')",
             update_id=update_id,
         )
-        result["errors"] = [e.as_dict() if hasattr(e, "as_dict") else vars(e) for e in events]
+        result["error_summary"] = _extract_error_summary(events)
+        if full_error_details:
+            result["errors"] = [e.as_dict() if hasattr(e, "as_dict") else vars(e) for e in events]
 
     # Optionally include config
     if include_config and update_info.config:
