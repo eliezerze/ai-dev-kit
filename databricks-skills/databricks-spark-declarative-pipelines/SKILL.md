@@ -227,7 +227,7 @@ For detailed Python reading patterns, see **[python/1-syntax-basics.md](python/1
 
 | Issue | Solution |
 |-------|----------|
-| **Empty output tables** | Use `get_table_details` to verify, check upstream sources |
+| **Empty output tables** | Use `get_table_stats_and_schema` to verify, check upstream sources |
 | **Pipeline stuck INITIALIZING** | Normal for serverless, wait a few minutes |
 | **"Column not found"** | Check `schemaHints` match actual data |
 | **Streaming reads fail** | For file ingestion in a streaming table, you must use the `STREAM` keyword with `read_files`: `FROM STREAM read_files(...)`. For table streams use `FROM stream(table)`. See [read_files — Usage in streaming tables](https://docs.databricks.com/aws/en/sql/language-manual/functions/read_files#usage-in-streaming-tables). |

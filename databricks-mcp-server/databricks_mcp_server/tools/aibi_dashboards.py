@@ -49,7 +49,7 @@ def create_or_update_dashboard(
     """Create or update an AI/BI dashboard from JSON content.
 
     CRITICAL: Before calling this tool, you MUST:
-    1. Call get_table_details() to get table schemas
+    1. Call get_table_stats_and_schema() to get table schemas
     2. Call execute_sql() to TEST EVERY dataset query
     If you skip validation, widgets WILL show errors!
 

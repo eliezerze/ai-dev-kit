@@ -68,7 +68,7 @@ run_result = run_pipeline(
 ```python
 if result["success"]:
     # Verify output tables
-    stats = get_table_details(
+    stats = get_table_stats_and_schema(
         catalog="my_catalog",
         schema="my_schema",
         table_names=["bronze_orders", "silver_orders", "gold_daily_summary"]
@@ -117,7 +117,7 @@ if not run_result["success"]:
 | Tool | Description |
 |------|-------------|
 | `upload_folder` | Upload local folder to workspace (parallel) |
-| `get_table_details` | Verify output tables have expected schema and row counts |
+| `get_table_stats_and_schema` | Verify output tables have expected schema and row counts |
 | `execute_sql` | Run ad-hoc SQL to inspect data |
 
 ---
