@@ -15,7 +15,7 @@ from databricks_tools_core.compute import (
 from ..server import mcp
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def list_clusters() -> List[Dict[str, Any]]:
     """
     List all clusters in the workspace.
@@ -26,7 +26,7 @@ def list_clusters() -> List[Dict[str, Any]]:
     return _list_clusters()
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_best_cluster() -> Dict[str, Any]:
     """
     Get the ID of the best available cluster for code execution.
@@ -44,7 +44,7 @@ def get_best_cluster() -> Dict[str, Any]:
     return {"cluster_id": cluster_id}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def start_cluster(cluster_id: str) -> Dict[str, Any]:
     """
     Start a terminated Databricks cluster.
@@ -76,7 +76,7 @@ def start_cluster(cluster_id: str) -> Dict[str, Any]:
     return _start_cluster(cluster_id)
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_cluster_status(cluster_id: str) -> Dict[str, Any]:
     """
     Get the current status of a Databricks cluster.
@@ -97,7 +97,7 @@ def get_cluster_status(cluster_id: str) -> Dict[str, Any]:
     return _get_cluster_status(cluster_id)
 
 
-@mcp.tool
+@mcp.tool(timeout=300)
 def execute_databricks_command(
     code: str,
     cluster_id: str = None,
@@ -181,7 +181,7 @@ def execute_databricks_command(
         }
 
 
-@mcp.tool
+@mcp.tool(timeout=300)
 def run_python_file_on_databricks(
     file_path: str,
     cluster_id: str = None,

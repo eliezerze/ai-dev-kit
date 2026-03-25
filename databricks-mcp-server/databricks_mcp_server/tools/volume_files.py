@@ -15,7 +15,7 @@ from databricks_tools_core.unity_catalog import (
 from ..server import mcp
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def list_volume_files(volume_path: str, max_results: int = 500) -> Dict[str, Any]:
     """
     List files and directories in a Unity Catalog volume path.
@@ -58,7 +58,7 @@ def list_volume_files(volume_path: str, max_results: int = 500) -> Dict[str, Any
     }
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def upload_to_volume(
     local_path: str,
     volume_path: str,
@@ -88,7 +88,7 @@ def upload_to_volume(
     }
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def download_from_volume(
     volume_path: str,
     local_path: str,
@@ -118,7 +118,7 @@ def download_from_volume(
     }
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def delete_volume_file(volume_path: str) -> Dict[str, Any]:
     """
     Delete a file from a Unity Catalog volume.
@@ -136,7 +136,7 @@ def delete_volume_file(volume_path: str) -> Dict[str, Any]:
         return {"volume_path": volume_path, "success": False, "error": str(e)}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def delete_volume_directory(volume_path: str) -> Dict[str, Any]:
     """
     Delete an empty directory from a Unity Catalog volume.
@@ -156,7 +156,7 @@ def delete_volume_directory(volume_path: str) -> Dict[str, Any]:
         return {"volume_path": volume_path, "success": False, "error": str(e)}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def create_volume_directory(volume_path: str) -> Dict[str, Any]:
     """
     Create a directory in a Unity Catalog volume.
@@ -177,7 +177,7 @@ def create_volume_directory(volume_path: str) -> Dict[str, Any]:
         return {"volume_path": volume_path, "success": False, "error": str(e)}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_volume_file_info(volume_path: str) -> Dict[str, Any]:
     """
     Get metadata for a file in a Unity Catalog volume.

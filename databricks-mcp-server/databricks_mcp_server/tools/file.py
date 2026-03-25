@@ -10,7 +10,7 @@ from databricks_tools_core.file import (
 from ..server import mcp
 
 
-@mcp.tool
+@mcp.tool(timeout=300)
 def upload_folder(
     local_folder: str,
     workspace_folder: str,
@@ -58,7 +58,7 @@ def upload_folder(
     }
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def upload_file(
     local_path: str,
     workspace_path: str,

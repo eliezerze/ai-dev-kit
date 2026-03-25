@@ -54,7 +54,7 @@ def _format_results_markdown(rows: List[Dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def execute_sql(
     sql_query: str,
     warehouse_id: str = None,
@@ -102,7 +102,7 @@ def execute_sql(
     return _format_results_markdown(rows)
 
 
-@mcp.tool
+@mcp.tool(timeout=120)
 def execute_sql_multi(
     sql_content: str,
     warehouse_id: str = None,
@@ -156,7 +156,7 @@ def execute_sql_multi(
     return result
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def list_warehouses() -> List[Dict[str, Any]]:
     """
     List all SQL warehouses in the workspace.
@@ -167,7 +167,7 @@ def list_warehouses() -> List[Dict[str, Any]]:
     return _list_warehouses()
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_best_warehouse() -> Optional[str]:
     """
     Get the ID of the best available SQL warehouse.
@@ -180,7 +180,7 @@ def get_best_warehouse() -> Optional[str]:
     return _get_best_warehouse()
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def get_table_stats_and_schema(
     catalog: str,
     schema: str,
@@ -223,7 +223,7 @@ def get_table_stats_and_schema(
     return result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def get_volume_folder_details(
     volume_path: str,
     format: str = "parquet",

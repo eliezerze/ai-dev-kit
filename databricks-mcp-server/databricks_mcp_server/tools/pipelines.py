@@ -27,7 +27,7 @@ def _delete_pipeline_resource(resource_id: str) -> None:
 register_deleter("pipeline", _delete_pipeline_resource)
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def create_pipeline(
     name: str,
     root_path: str,
@@ -82,7 +82,7 @@ def create_pipeline(
     return {"pipeline_id": result.pipeline_id}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_pipeline(pipeline_id: str) -> Dict[str, Any]:
     """
     Get pipeline details and configuration.
@@ -97,7 +97,7 @@ def get_pipeline(pipeline_id: str) -> Dict[str, Any]:
     return result.as_dict() if hasattr(result, "as_dict") else vars(result)
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def update_pipeline(
     pipeline_id: str,
     name: str = None,
@@ -136,7 +136,7 @@ def update_pipeline(
     return {"status": "updated"}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def delete_pipeline(pipeline_id: str) -> Dict[str, str]:
     """
     Delete a pipeline.
@@ -157,7 +157,7 @@ def delete_pipeline(pipeline_id: str) -> Dict[str, str]:
     return {"status": "deleted"}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def start_update(
     pipeline_id: str,
     refresh_selection: List[str] = None,
@@ -188,7 +188,7 @@ def start_update(
     return {"update_id": update_id}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_update(pipeline_id: str, update_id: str) -> Dict[str, Any]:
     """
     Get pipeline update status and results.
@@ -204,7 +204,7 @@ def get_update(pipeline_id: str, update_id: str) -> Dict[str, Any]:
     return result.as_dict() if hasattr(result, "as_dict") else vars(result)
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def stop_pipeline(pipeline_id: str) -> Dict[str, str]:
     """
     Stop a running pipeline.
@@ -219,7 +219,7 @@ def stop_pipeline(pipeline_id: str) -> Dict[str, str]:
     return {"status": "stopped"}
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_pipeline_events(
     pipeline_id: str,
     max_results: int = 100,
@@ -240,7 +240,7 @@ def get_pipeline_events(
     return [e.as_dict() if hasattr(e, "as_dict") else vars(e) for e in events]
 
 
-@mcp.tool
+@mcp.tool(timeout=300)
 def create_or_update_pipeline(
     name: str,
     root_path: str,
@@ -352,7 +352,7 @@ def create_or_update_pipeline(
     return result.to_dict()
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def find_pipeline_by_name(name: str) -> Dict[str, Any]:
     """
     Find a pipeline by name and return its ID.
