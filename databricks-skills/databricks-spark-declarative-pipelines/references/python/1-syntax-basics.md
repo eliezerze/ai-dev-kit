@@ -243,6 +243,27 @@ df = spark.readStream.format("cloudFiles") \
 
 **Best practice:** Use unqualified names for pipeline-internal tables.
 
+### Multi-Schema Pattern (One Pipeline)
+
+Write to multiple schemas from a single pipeline using fully qualified names:
+
+```python
+from pyspark import pipelines as dp
+
+# Bronze → writes to bronze schema
+@dp.table(name="my_catalog.bronze.raw_orders")
+def bronze_orders():
+    return spark.readStream.format("cloudFiles") \
+        .option("cloudFiles.format", "json") \
+        .load("/Volumes/my_catalog/raw/orders/")
+
+# Silver → writes to silver schema, reads from bronze
+@dp.table(name="my_catalog.silver.clean_orders")
+def silver_orders():
+    return spark.readStream.table("my_catalog.bronze.raw_orders") \
+        .filter("order_id IS NOT NULL")
+```
+
 ---
 
 ## Pipeline Parameters

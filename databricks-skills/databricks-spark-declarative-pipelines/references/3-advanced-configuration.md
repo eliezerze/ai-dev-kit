@@ -353,9 +353,9 @@ You can copy pipeline settings from the Databricks UI (Pipeline Settings > JSON)
 
 ## Multi-Schema Patterns
 
-**Default: Single target schema per pipeline.** Each pipeline has one target `catalog` and `schema` where all tables are written. Use table name prefixes to distinguish layers (e.g., `bronze_*`, `silver_*`, `gold_*`).
+**Recommended: One pipeline writing to multiple schemas** using fully qualified table names. This is simpler than creating multiple pipelines and keeps all dependencies in one place.
 
-For advanced use cases where you need separate schemas per layer, use pipeline parameters.
+For simple cases where all tables go to the same schema, use name prefixes (`bronze_*`, `silver_*`, `gold_*`).
 
 ### Option 1: Same Catalog, Separate Schemas
 

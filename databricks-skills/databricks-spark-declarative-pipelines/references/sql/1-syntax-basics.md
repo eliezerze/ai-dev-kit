@@ -192,6 +192,22 @@ AS SELECT ...;
 
 **Best practice:** Use unqualified names for pipeline-internal tables.
 
+### Multi-Schema Pattern (One Pipeline)
+
+Write to multiple schemas from a single pipeline using fully qualified names:
+
+```sql
+-- bronze_orders.sql → writes to bronze schema
+CREATE OR REFRESH STREAMING TABLE my_catalog.bronze.raw_orders
+AS SELECT *, current_timestamp() AS _ingested_at
+FROM STREAM read_files('/Volumes/my_catalog/raw/orders/', format => 'json');
+
+-- silver_orders.sql → writes to silver schema, reads from bronze
+CREATE OR REFRESH STREAMING TABLE my_catalog.silver.clean_orders
+AS SELECT * FROM STREAM my_catalog.bronze.raw_orders
+WHERE order_id IS NOT NULL;
+```
+
 ---
 
 ## Pipeline Parameters

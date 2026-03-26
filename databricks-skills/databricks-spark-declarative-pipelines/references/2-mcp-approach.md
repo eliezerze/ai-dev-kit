@@ -10,7 +10,7 @@ Create `.sql` or `.py` files in a local folder. For syntax examples, see:
 
 ### Step 2: Upload to Databricks Workspace
 
-```python
+```
 # MCP Tool: upload_to_workspace
 upload_to_workspace(
     local_path="/path/to/my_pipeline",
@@ -22,9 +22,9 @@ upload_to_workspace(
 
 Use **`create_or_update_pipeline`** to manage the resource, then **`run_pipeline`** to execute it:
 
-```python
+```
 # MCP Tool: create_or_update_pipeline
-result = create_or_update_pipeline(
+create_or_update_pipeline(
     name="my_orders_pipeline",
     root_path="/Workspace/Users/user@example.com/my_pipeline",
     catalog="my_catalog",
@@ -37,53 +37,49 @@ result = create_or_update_pipeline(
 )
 
 # MCP Tool: run_pipeline
-run_result = run_pipeline(
-    pipeline_id=result["pipeline_id"],
-    full_refresh=True,            # Full refresh all tables
-    wait_for_completion=True,     # Wait and return final status
-    timeout=1800                  # 30 minute timeout
+run_pipeline(
+    pipeline_id="<pipeline_id from above>",
+    full_refresh=True,
+    wait_for_completion=True,
+    timeout=1800
 )
 ```
 
 **Result contains actionable information:**
-```python
+```json
 {
-    "success": True,                    # Did the operation succeed?
-    "pipeline_id": "abc-123",           # Pipeline ID for follow-up operations
+    "success": true,
+    "pipeline_id": "abc-123",
     "pipeline_name": "my_orders_pipeline",
-    "created": True,                    # True if new, False if updated
-    "state": "COMPLETED",               # COMPLETED, FAILED, TIMEOUT, etc.
-    "catalog": "my_catalog",            # Target catalog
-    "schema": "my_schema",              # Target schema
-    "duration_seconds": 45.2,           # Time taken
+    "created": true,
+    "state": "COMPLETED",
+    "catalog": "my_catalog",
+    "schema": "my_schema",
+    "duration_seconds": 45.2,
     "message": "Pipeline created and completed successfully in 45.2s. Tables written to my_catalog.my_schema",
-    "error_message": None,              # Error summary if failed
-    "errors": []                        # Detailed error list if failed
+    "error_message": null,
+    "errors": []
 }
 ```
 
-### Step 4: Handle Results
+### Step 4: Validate Results
 
-**On Success:**
-```python
-if result["success"]:
-    # Verify output tables
-    stats = get_table_stats_and_schema(
-        catalog="my_catalog",
-        schema="my_schema",
-        table_names=["bronze_orders", "silver_orders", "gold_daily_summary"]
-    )
+**On Success** - Use `get_table_details` to verify tables (NOT manual SQL COUNT queries):
+```
+# MCP Tool: get_table_details
+get_table_details(
+    catalog="my_catalog",
+    schema="my_schema",
+    table_names=["bronze_orders", "silver_orders", "gold_daily_summary"]
+)
+# Returns schema, row counts, and column stats for all tables in one call
 ```
 
-**On Failure:**
-```python
-if not run_result["success"]:
-    # Message includes suggested next steps
-    print(run_result["message"])
-
-    # Get detailed errors (get_pipeline enriches with recent events)
-    details = get_pipeline(pipeline_id=result["pipeline_id"])
-    print(details.get("recent_events"))
+**On Failure** - Check `run_result["message"]` for suggested next steps, then get detailed errors:
+```
+# MCP Tool: get_pipeline
+get_pipeline(pipeline_id="<pipeline_id>")
+# Returns pipeline details enriched with recent events and error messages
 ```
 
 ### Step 5: Iterate Until Working
@@ -117,7 +113,7 @@ if not run_result["success"]:
 | Tool | Description |
 |------|-------------|
 | `upload_to_workspace` | Upload files/folders to workspace (handles files, folders, globs) |
-| `get_table_stats_and_schema` | Verify output tables have expected schema and row counts |
-| `execute_sql` | Run ad-hoc SQL to inspect data |
+| `get_table_details` | **Use this to validate tables** - returns schema, row counts, and stats in one call. Do NOT use `execute_sql` with COUNT queries. |
+| `execute_sql` | Run ad-hoc SQL to inspect actual data content (not for row counts) |
 
 ---

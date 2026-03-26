@@ -17,11 +17,12 @@ description: "Creates, configures, and updates Databricks Lakeflow Spark Declara
 
 ### Simplicity First
 - **MUST** create the minimal number of tables to solve the task
+- Simplicity first: prefer single pipeline even for multi-schema setups - use fully qualified names (`catalog.schema.table`)
 - When asked to "create a silver table" or "create a gold table", create **ONE table** - not a multi-layer pipeline
 - Don't add intermediate tables, staging tables, or helper views unless explicitly requested
 - A silver transformation = 1 streaming table reading from bronze
 - A gold aggregation = 1 materialized view reading from silver
-- Only create bronze→silver→gold chains when the user asks for a "pipeline" or "medallion architecture"
+- Create bronze→silver→gold chains when the user asks for a "pipeline" or "medallion architecture" or full/detailed ingestion. Otherwise keep it simple - don't over engineer.
 
 ### Language Selection
 - **MUST** know the language (Python or SQL). For simple task / pipeline / table creation, pick SQL. For complex pipeline with parametrized information, or if the user mentions python-related items pick python. If you have a doubt, ask the user. Stick with that language unless told otherwise.
@@ -255,17 +256,70 @@ For detailed syntax, see [sql/1-syntax-basics.md](references/sql/1-syntax-basics
 - **Serverless compute** - Do not use classic clusters unless explicitly required (R, RDD APIs, JAR libraries)
 - **Unity Catalog** (required for serverless)
 - **CLUSTER BY** (Liquid Clustering), not PARTITION BY with ZORDER - see [sql/5-performance.md](references/sql/5-performance.md) or [python/5-performance.md](references/python/5-performance.md)
-- **read_files()** for SQL cloud storage ingestion - see [sql/2-ingestion.md](references/sql/2-ingestion.md)
+- **read_files()** for SQL cloud storage ingestion - always consume a folder, not a single file - see [sql/2-ingestion.md](references/sql/2-ingestion.md)
 
 ### Multi-Schema Patterns
 
-**Default: Single target schema per pipeline** with table name prefixes (e.g., `bronze_*`, `silver_*`, `gold_*`). This is the simplest approach.
+**Preferred: One pipeline writing to multiple schemas** using fully qualified table names (`catalog.schema.table`). This keeps dependencies clear and is simpler to manage than multiple pipelines.
 
-For advanced patterns with separate schemas per layer, see **[3-advanced-configuration.md](3-advanced-configuration.md#multi-schema-patterns)**.
+- **Python**: `@dp.table(name="catalog.bronze_schema.orders")`
+- **SQL**: `CREATE OR REFRESH STREAMING TABLE catalog.silver_schema.orders_clean AS ...`
 
-**Note:** The `@dp.table()` decorator does not support separate `schema=` or `catalog=` parameters. Use a string like `catalog.schema.table_name`, or omit catalog/schema to use pipeline defaults.
+For detailed examples, see **[3-advanced-configuration.md](references/3-advanced-configuration.md#multi-schema-patterns)**.
 
-For detailed Python reading patterns, see **[python/1-syntax-basics.md](references/python/1-syntax-basics.md#reading-data)**.
+**Fallback**: If all tables must be in the same schema, use name prefixes (`bronze_*`, `silver_*`, `gold_*`).
+
+---
+
+## Post-Run Validation (Required)
+
+After running a pipeline (via DAB or MCP), you **MUST** validate both the execution status AND the actual data.
+
+### Step 1: Check Pipeline Execution Status
+
+**From MCP (`run_pipeline` or `create_or_update_pipeline`):**
+- Check `result["success"]` and `result["state"]`
+- If failed, check `result["message"]` and `result["errors"]` for details
+
+**From DAB (`databricks bundle run`):**
+- Check the command output for success/failure
+- Use `get_pipeline(pipeline_id=...)` to get detailed status and recent events
+
+### Step 2: Validate Output Data
+
+Even if the pipeline reports SUCCESS, you **MUST** verify the data is correct:
+
+```
+# MCP Tool: get_table_details - validates schema, row counts, and stats
+get_table_details(
+    catalog="my_catalog",
+    schema="my_schema",
+    table_names=["bronze_*", "silver_*", "gold_*"]  # Use glob patterns
+)
+```
+
+**Check for:**
+- Empty tables (row_count = 0) - indicates ingestion or filtering issues
+- Unexpected row counts - joins may have exploded or filtered too much
+- Missing columns - schema mismatch or transformation errors
+- NULL values in key columns - data quality issues
+
+### Step 3: Debug Data Issues
+
+If validation reveals problems, trace upstream to find the root cause:
+
+1. **Start from the problematic table** - identify what's wrong (empty, wrong counts, bad data)
+2. **Check its source table** - use `get_table_details` on the upstream table
+3. **Trace back to bronze** - continue until you find where the issue originates
+4. **Common causes:**
+   - Bronze empty → source files missing or path incorrect
+   - Silver empty → filter too aggressive or join condition wrong
+   - Gold wrong counts → aggregation logic error or duplicate keys
+   - Data mismatch → type casting issues or NULL handling
+
+5. **Fix the SQL/Python code**, re-upload, and re-run the pipeline
+
+**Do NOT use `execute_sql` with COUNT queries for validation** - `get_table_details` is faster and returns more information in a single call.
 
 ---
 
@@ -273,7 +327,7 @@ For detailed Python reading patterns, see **[python/1-syntax-basics.md](referenc
 
 | Issue | Solution |
 |-------|----------|
-| **Empty output tables** | Use `get_table_stats_and_schema` to verify, check upstream sources |
+| **Empty output tables** | Use `get_table_details` to check upstream sources. Verify source files exist and paths are correct. |
 | **Pipeline stuck INITIALIZING** | Normal for serverless, wait a few minutes |
 | **"Column not found"** | Check `schemaHints` match actual data |
 | **Streaming reads fail** | For file ingestion in a streaming table, you must use the `STREAM` keyword with `read_files`: `FROM STREAM read_files(...)`. For table streams use `FROM stream(table)`. See [read_files — Usage in streaming tables](https://docs.databricks.com/aws/en/sql/language-manual/functions/read_files#usage-in-streaming-tables). |
