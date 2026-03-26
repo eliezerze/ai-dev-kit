@@ -1,10 +1,10 @@
-"""File tools - Upload files and folders to Databricks workspace."""
+"""File tools - Upload and delete files and folders in Databricks workspace."""
 
 from typing import Dict, Any
 
 from databricks_tools_core.file import (
-    upload_folder as _upload_folder,
-    upload_file as _upload_file,
+    upload_to_workspace as _upload_to_workspace,
+    delete_from_workspace as _delete_from_workspace,
 )
 
 from ..server import mcp
@@ -44,9 +44,9 @@ def upload_folder(
         - failed: Number of failed uploads
         - success: True if all uploads succeeded
     """
-    result = _upload_folder(
-        local_folder=local_folder,
-        workspace_folder=workspace_folder,
+    result = _upload_to_workspace(
+        local_path=local_folder,
+        workspace_path=workspace_folder,
         max_workers=max_workers,
         overwrite=overwrite,
     )
@@ -84,14 +84,23 @@ def upload_file(
         - success: True if upload succeeded
         - error: Error message if failed
     """
-    result = _upload_file(
+    result = _upload_to_workspace(
         local_path=local_path,
         workspace_path=workspace_path,
         overwrite=overwrite,
     )
+    # For single file, return simplified result
+    if result.total_files == 1 and result.results:
+        single_result = result.results[0]
+        return {
+            "local_path": single_result.local_path,
+            "remote_path": single_result.remote_path,
+            "success": single_result.success,
+            "error": single_result.error,
+        }
     return {
-        "local_path": result.local_path,
-        "remote_path": result.remote_path,
+        "local_path": result.local_folder,
+        "remote_path": result.remote_folder,
         "success": result.success,
-        "error": result.error,
+        "error": result.results[0].error if result.results else None,
     }
