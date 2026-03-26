@@ -139,6 +139,16 @@ Before writing pipeline code, make sure you have:
 | `input_file_name()` | `_metadata.file_path` |
 | `target` parameter | `schema` parameter |
 
+### Streaming Table vs Materialized View
+
+| Use Case | Type | Pattern |
+|----------|------|---------|
+| Windowed aggregations (tumbling, sliding, session) | Streaming Table | `FROM stream(source)` + `GROUP BY window()` |
+| Full-table aggregations (totals, daily counts) | Materialized View | `FROM source` (no stream wrapper) |
+| CDC / SCD Type 2 | Streaming Table | `AUTO CDC INTO` or `dp.create_auto_cdc_flow()` |
+
+Use streaming tables for windowed aggregations to enable incremental processing. Use materialized views for simple aggregations that recompute fully on each refresh.
+
 ---
 
 ## Task-Based Routing
