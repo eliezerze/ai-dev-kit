@@ -153,7 +153,7 @@ def delete_pipeline(pipeline_id: str) -> Dict[str, str]:
     return {"status": "deleted"}
 
 
-@mcp.tool(timeout=300)
+@mcp.tool()
 def start_update(
     pipeline_id: str,
     refresh_selection: List[str] = None,
