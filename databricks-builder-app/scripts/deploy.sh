@@ -195,6 +195,7 @@ mkdir -p "$STAGING_DIR/packages/databricks_mcp_server"
 cp -r "$REPO_ROOT/databricks-mcp-server/databricks_mcp_server/"* "$STAGING_DIR/packages/databricks_mcp_server/"
 
 if [ "$SKIP_SKILLS" = true ] && [ -d "$SKILLS_CACHE_DIR" ] && [ "$(ls -A "$SKILLS_CACHE_DIR" 2>/dev/null)" ]; then
+  mkdir -p "$STAGING_DIR/skills"
   echo -e "  ${GREEN}✓${NC} Reusing cached skills from ${SKILLS_CACHE_DIR} (--skip-skills)"
   cp -r "$SKILLS_CACHE_DIR"/* "$STAGING_DIR/skills/"
 else

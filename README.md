@@ -137,13 +137,24 @@ irm https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/insta
 
 ### Visual Builder App
 
-Full-stack web application with chat UI for Databricks development:
+Full-stack web application with chat UI for Databricks development. Deploys a Lakebase database and Databricks App with a single command:
 
 ```bash
 cd ai-dev-kit/databricks-builder-app
-./scripts/setup.sh
-# Follow instructions to start the app
+
+# Deploy everything (Lakebase + app + permissions)
+./scripts/deploy.sh my-builder-app --profile <your-profile>
 ```
+
+For local development:
+
+```bash
+./scripts/setup.sh        # Install dependencies
+# Edit .env.local with your credentials
+./scripts/start_dev.sh    # Start locally at http://localhost:3000
+```
+
+See [`databricks-builder-app/`](databricks-builder-app/) for full documentation.
 
 
 ### Core Library
