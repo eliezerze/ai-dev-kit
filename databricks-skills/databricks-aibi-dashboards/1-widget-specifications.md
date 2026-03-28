@@ -32,17 +32,37 @@ Core widget types for AI/BI dashboards. For advanced visualizations (area, scatt
 
 ## Text (Headers/Descriptions)
 
-- **Text widgets do NOT use a spec block** - use `multilineTextboxSpec` directly
+- **CRITICAL: Text widgets do NOT use a spec block** - use `multilineTextboxSpec` directly
 - Supports markdown: `#`, `##`, `###`, `**bold**`, `*italic*`
-- Multiple items in `lines` array concatenate on one line - use **separate widgets** for title/subtitle
+- **CRITICAL: Multiple items in the `lines` array are concatenated on a single line, NOT displayed as separate lines!**
+- For title + subtitle, use **separate text widgets** at different y positions
 
 ```json
+// CORRECT: Separate widgets for title and subtitle
 {
   "widget": {
     "name": "title",
     "multilineTextboxSpec": {"lines": ["## Dashboard Title"]}
   },
   "position": {"x": 0, "y": 0, "width": 6, "height": 1}
+},
+{
+  "widget": {
+    "name": "subtitle",
+    "multilineTextboxSpec": {"lines": ["Description text here"]}
+  },
+  "position": {"x": 0, "y": 1, "width": 6, "height": 1}
+}
+
+// WRONG: Multiple lines concatenate into one line!
+{
+  "widget": {
+    "name": "title-widget",
+    "multilineTextboxSpec": {
+      "lines": ["## Dashboard Title", "Description text here"]  // Becomes "## Dashboard TitleDescription text here"
+    }
+  },
+  "position": {"x": 0, "y": 0, "width": 6, "height": 2}
 }
 ```
 

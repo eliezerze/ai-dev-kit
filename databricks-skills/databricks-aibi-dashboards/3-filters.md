@@ -38,13 +38,13 @@
   "widget": {
     "name": "filter_region",
     "queries": [{
-      "name": "ds_data_region",
+      "name": "ds_data_region",  // Query name - must match queryName in encodings!
       "query": {
         "datasetName": "ds_data",
         "fields": [
           {"name": "region", "expression": "`region`"}
         ],
-        "disaggregated": false
+        "disaggregated": false  // CRITICAL: Always false for filters!
       }
     }],
     "spec": {
@@ -54,7 +54,7 @@
         "fields": [{
           "fieldName": "region",
           "displayName": "Region",
-          "queryName": "ds_data_region"
+          "queryName": "ds_data_region"  // Must match queries[].name above!
         }]
       },
       "frame": {"showTitle": true, "title": "Region"}
