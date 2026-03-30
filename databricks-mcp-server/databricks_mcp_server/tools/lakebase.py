@@ -1,7 +1,10 @@
 """Lakebase tools - Manage Lakebase databases (Provisioned and Autoscaling).
 
-Provides 8 high-level workflow tools that wrap the granular databricks-tools-core
-functions, following the create_or_update pattern from pipelines.
+Consolidated into 4 tools:
+- manage_lakebase_database: create_or_update, get, list, delete
+- manage_lakebase_branch: create_or_update, delete
+- manage_lakebase_sync: create_or_update, delete
+- generate_lakebase_credential: Generate OAuth tokens
 """
 
 import logging
@@ -80,24 +83,211 @@ def _find_branch(project_name: str, branch_id: str) -> Optional[Dict[str, Any]]:
 
 
 # ============================================================================
-# Tool 1: create_or_update_lakebase_database
+# Tool 1: manage_lakebase_database
 # ============================================================================
 
 
 @mcp.tool(timeout=120)
-def create_or_update_lakebase_database(
-    name: str,
+def manage_lakebase_database(
+    action: str,
+    name: Optional[str] = None,
     type: str = "provisioned",
+    # For create_or_update:
     capacity: str = "CU_1",
     stopped: bool = False,
     display_name: Optional[str] = None,
     pg_version: str = "17",
+    # For delete:
+    force: bool = False,
 ) -> Dict[str, Any]:
-    """Create/update Lakebase PostgreSQL database.
+    """Manage Lakebase PostgreSQL databases: create, update, get, list, delete.
 
-    type: "provisioned" (fixed capacity CU_1/2/4/8) or "autoscale" (auto-scaling, includes production branch).
-    See databricks-lakebase-provisioned or databricks-lakebase-autoscale skill for details.
-    Returns: {created: bool, type, ...connection info}."""
+    Actions:
+    - create_or_update: Idempotent create/update. Requires name.
+      type: "provisioned" (fixed capacity CU_1/2/4/8) or "autoscale" (auto-scaling with branches).
+      capacity: For provisioned only. pg_version: For autoscale only.
+      Returns: {created: bool, type, ...connection info}.
+    - get: Get database details. Requires name.
+      For autoscale, includes branches and endpoints.
+      Returns: {name, type, state, ...}.
+    - list: List all databases. Optional type filter.
+      Returns: {databases: [{name, type, ...}]}.
+    - delete: Delete database. Requires name.
+      force=True cascades to children (provisioned). Autoscale deletes all branches/computes/data.
+      Returns: {status, ...}.
+
+    See databricks-lakebase-provisioned or databricks-lakebase-autoscale skill for details."""
+    act = action.lower()
+
+    if act == "create_or_update":
+        if not name:
+            return {"error": "create_or_update requires: name"}
+        return _create_or_update_database(
+            name=name, type=type, capacity=capacity, stopped=stopped,
+            display_name=display_name, pg_version=pg_version,
+        )
+
+    elif act == "get":
+        if not name:
+            return {"error": "get requires: name"}
+        return _get_database(name=name, type=type)
+
+    elif act == "list":
+        return _list_databases(type=type if type != "provisioned" else None)
+
+    elif act == "delete":
+        if not name:
+            return {"error": "delete requires: name"}
+        return _delete_database(name=name, type=type, force=force)
+
+    else:
+        return {"error": f"Invalid action '{action}'. Valid actions: create_or_update, get, list, delete"}
+
+
+# ============================================================================
+# Tool 2: manage_lakebase_branch
+# ============================================================================
+
+
+@mcp.tool(timeout=120)
+def manage_lakebase_branch(
+    action: str,
+    # For create_or_update:
+    project_name: Optional[str] = None,
+    branch_id: Optional[str] = None,
+    source_branch: Optional[str] = None,
+    ttl_seconds: Optional[int] = None,
+    no_expiry: bool = False,
+    is_protected: Optional[bool] = None,
+    endpoint_type: str = "ENDPOINT_TYPE_READ_WRITE",
+    autoscaling_limit_min_cu: Optional[float] = None,
+    autoscaling_limit_max_cu: Optional[float] = None,
+    scale_to_zero_seconds: Optional[int] = None,
+    # For delete:
+    name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Manage Autoscale branches: create, update, delete.
+
+    Branches are isolated copy-on-write environments with their own compute endpoints.
+
+    Actions:
+    - create_or_update: Idempotent create/update. Requires project_name, branch_id.
+      source_branch: Branch to fork from (default: production).
+      ttl_seconds: Auto-delete after N seconds. is_protected: Prevent accidental deletion.
+      autoscaling_limit_min/max_cu: Compute unit limits. scale_to_zero_seconds: Idle time before scaling to zero.
+      Returns: {branch details, endpoint connection info, created: bool}.
+    - delete: Delete branch and endpoints. Requires name (full branch name).
+      Permanently deletes data/databases/roles. Cannot delete protected branches.
+      Returns: {status, ...}.
+
+    See databricks-lakebase-autoscale skill for branch workflows."""
+    act = action.lower()
+
+    if act == "create_or_update":
+        if not project_name or not branch_id:
+            return {"error": "create_or_update requires: project_name, branch_id"}
+        return _create_or_update_branch(
+            project_name=project_name, branch_id=branch_id, source_branch=source_branch,
+            ttl_seconds=ttl_seconds, no_expiry=no_expiry, is_protected=is_protected,
+            endpoint_type=endpoint_type, autoscaling_limit_min_cu=autoscaling_limit_min_cu,
+            autoscaling_limit_max_cu=autoscaling_limit_max_cu, scale_to_zero_seconds=scale_to_zero_seconds,
+        )
+
+    elif act == "delete":
+        if not name:
+            return {"error": "delete requires: name (full branch name)"}
+        return _delete_branch(name=name)
+
+    else:
+        return {"error": f"Invalid action '{action}'. Valid actions: create_or_update, delete"}
+
+
+# ============================================================================
+# Tool 3: manage_lakebase_sync
+# ============================================================================
+
+
+@mcp.tool(timeout=120)
+def manage_lakebase_sync(
+    action: str,
+    # For create_or_update:
+    instance_name: Optional[str] = None,
+    source_table_name: Optional[str] = None,
+    target_table_name: Optional[str] = None,
+    catalog_name: Optional[str] = None,
+    database_name: str = "databricks_postgres",
+    primary_key_columns: Optional[List[str]] = None,
+    scheduling_policy: str = "TRIGGERED",
+    # For delete:
+    table_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Manage Lakebase sync (reverse ETL): create, delete.
+
+    Actions:
+    - create_or_update: Set up reverse ETL from Delta table to Lakebase.
+      Requires instance_name, source_table_name, target_table_name.
+      Creates catalog if needed, then synced table.
+      source_table_name: Delta table (catalog.schema.table). target_table_name: Postgres destination.
+      primary_key_columns: Required for incremental sync.
+      scheduling_policy: TRIGGERED/SNAPSHOT/CONTINUOUS.
+      Returns: {catalog, synced_table, created}.
+    - delete: Remove synced table, optionally UC catalog. Source Delta table unaffected.
+      Requires table_name. Optional catalog_name to also delete catalog.
+      Returns: {synced_table, catalog (if deleted)}.
+
+    See databricks-lakebase-provisioned skill for sync workflows."""
+    act = action.lower()
+
+    if act == "create_or_update":
+        if not all([instance_name, source_table_name, target_table_name]):
+            return {"error": "create_or_update requires: instance_name, source_table_name, target_table_name"}
+        return _create_or_update_sync(
+            instance_name=instance_name, source_table_name=source_table_name,
+            target_table_name=target_table_name, catalog_name=catalog_name,
+            database_name=database_name, primary_key_columns=primary_key_columns,
+            scheduling_policy=scheduling_policy,
+        )
+
+    elif act == "delete":
+        if not table_name:
+            return {"error": "delete requires: table_name"}
+        return _delete_sync(table_name=table_name, catalog_name=catalog_name)
+
+    else:
+        return {"error": f"Invalid action '{action}'. Valid actions: create_or_update, delete"}
+
+
+# ============================================================================
+# Tool 4: generate_lakebase_credential
+# ============================================================================
+
+
+@mcp.tool(timeout=30)
+def generate_lakebase_credential(
+    instance_names: Optional[List[str]] = None,
+    endpoint: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Generate OAuth token (~1hr) for Lakebase connection. Use as password with sslmode=require.
+
+    Provide instance_names (provisioned) or endpoint (autoscale)."""
+    if instance_names:
+        return _generate_provisioned_credential(instance_names=instance_names)
+    elif endpoint:
+        return _generate_autoscale_credential(endpoint=endpoint)
+    else:
+        return {"error": "Provide either instance_names (provisioned) or endpoint (autoscale)."}
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def _create_or_update_database(
+    name: str, type: str, capacity: str, stopped: bool,
+    display_name: Optional[str], pg_version: str,
+) -> Dict[str, Any]:
+    """Create or update a Lakebase database."""
     db_type = type.lower()
 
     if db_type == "provisioned":
@@ -109,7 +299,6 @@ def create_or_update_lakebase_database(
             result = _create_instance(name=name, capacity=capacity, stopped=stopped)
             try:
                 from ..manifest import track_resource
-
                 track_resource(resource_type="lakebase_instance", name=name, resource_id=name)
             except Exception:
                 pass
@@ -128,7 +317,6 @@ def create_or_update_lakebase_database(
             )
             try:
                 from ..manifest import track_resource
-
                 track_resource(resource_type="lakebase_project", name=name, resource_id=name)
             except Exception:
                 pass
@@ -138,44 +326,36 @@ def create_or_update_lakebase_database(
         return {"error": f"Invalid type '{type}'. Use 'provisioned' or 'autoscale'."}
 
 
-# ============================================================================
-# Tool 2: get_lakebase_database
-# ============================================================================
+def _get_database(name: str, type: Optional[str]) -> Dict[str, Any]:
+    """Get a database by name."""
+    result = None
+    if type is None or type.lower() == "provisioned":
+        result = _find_instance_by_name(name)
+        if result:
+            result["type"] = "provisioned"
+
+    if result is None and (type is None or type.lower() == "autoscale"):
+        result = _find_project_by_name(name)
+        if result:
+            result["type"] = "autoscale"
+            try:
+                result["branches"] = _list_branches(project_name=name)
+            except Exception:
+                pass
+            try:
+                for branch in result.get("branches", []):
+                    branch_name = branch.get("name", "")
+                    branch["endpoints"] = _list_endpoints(branch_name=branch_name)
+            except Exception:
+                pass
+
+    if result is None:
+        return {"error": f"Database '{name}' not found."}
+    return result
 
 
-@mcp.tool(timeout=30)
-def get_lakebase_database(
-    name: Optional[str] = None,
-    type: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Get database details or list all. Pass name for one (includes branches/endpoints for autoscale), omit for all."""
-    if name:
-        result = None
-        if type is None or type.lower() == "provisioned":
-            result = _find_instance_by_name(name)
-            if result:
-                result["type"] = "provisioned"
-
-        if result is None and (type is None or type.lower() == "autoscale"):
-            result = _find_project_by_name(name)
-            if result:
-                result["type"] = "autoscale"
-                try:
-                    result["branches"] = _list_branches(project_name=name)
-                except Exception:
-                    pass
-                try:
-                    for branch in result.get("branches", []):
-                        branch_name = branch.get("name", "")
-                        branch["endpoints"] = _list_endpoints(branch_name=branch_name)
-                except Exception:
-                    pass
-
-        if result is None:
-            return {"error": f"Database '{name}' not found."}
-        return result
-
-    # List all databases
+def _list_databases(type: Optional[str]) -> Dict[str, Any]:
+    """List all databases."""
     databases = []
 
     if type is None or type.lower() == "provisioned":
@@ -197,18 +377,8 @@ def get_lakebase_database(
     return {"databases": databases}
 
 
-# ============================================================================
-# Tool 3: delete_lakebase_database
-# ============================================================================
-
-
-@mcp.tool(timeout=60)
-def delete_lakebase_database(
-    name: str,
-    type: str = "provisioned",
-    force: bool = False,
-) -> Dict[str, Any]:
-    """Delete database. force=True cascades to children (provisioned). Autoscale deletes all branches/computes/data."""
+def _delete_database(name: str, type: str, force: bool) -> Dict[str, Any]:
+    """Delete a database."""
     db_type = type.lower()
 
     if db_type == "provisioned":
@@ -219,30 +389,13 @@ def delete_lakebase_database(
         return {"error": f"Invalid type '{type}'. Use 'provisioned' or 'autoscale'."}
 
 
-# ============================================================================
-# Tool 4: create_or_update_lakebase_branch
-# ============================================================================
-
-
-@mcp.tool(timeout=120)
-def create_or_update_lakebase_branch(
-    project_name: str,
-    branch_id: str,
-    source_branch: Optional[str] = None,
-    ttl_seconds: Optional[int] = None,
-    no_expiry: bool = False,
-    is_protected: Optional[bool] = None,
-    endpoint_type: str = "ENDPOINT_TYPE_READ_WRITE",
-    autoscaling_limit_min_cu: Optional[float] = None,
-    autoscaling_limit_max_cu: Optional[float] = None,
-    scale_to_zero_seconds: Optional[int] = None,
+def _create_or_update_branch(
+    project_name: str, branch_id: str, source_branch: Optional[str],
+    ttl_seconds: Optional[int], no_expiry: bool, is_protected: Optional[bool],
+    endpoint_type: str, autoscaling_limit_min_cu: Optional[float],
+    autoscaling_limit_max_cu: Optional[float], scale_to_zero_seconds: Optional[int],
 ) -> Dict[str, Any]:
-    """Create/update Autoscale branch with compute endpoint. Branches are isolated copy-on-write environments.
-
-    source_branch: Branch to fork from (default: production). ttl_seconds: Auto-delete after N seconds.
-    is_protected: Prevent accidental deletion. autoscaling_limit_min/max_cu: Compute unit limits.
-    scale_to_zero_seconds: Idle time before scaling to zero.
-    Returns: {branch details, endpoint connection info, created: bool}."""
+    """Create or update a branch with compute endpoint."""
     existing = _find_branch(project_name, branch_id)
 
     if existing:
@@ -305,37 +458,12 @@ def create_or_update_lakebase_branch(
         return result
 
 
-# ============================================================================
-# Tool 5: delete_lakebase_branch
-# ============================================================================
-
-
-@mcp.tool(timeout=60)
-def delete_lakebase_branch(name: str) -> Dict[str, Any]:
-    """Delete Autoscale branch and endpoints. Permanently deletes data/databases/roles. Cannot delete protected branches."""
-    return _delete_branch(name=name)
-
-
-# ============================================================================
-# Tool 6: create_or_update_lakebase_sync
-# ============================================================================
-
-
-@mcp.tool(timeout=120)
-def create_or_update_lakebase_sync(
-    instance_name: str,
-    source_table_name: str,
-    target_table_name: str,
-    catalog_name: Optional[str] = None,
-    database_name: str = "databricks_postgres",
-    primary_key_columns: Optional[List[str]] = None,
-    scheduling_policy: str = "TRIGGERED",
+def _create_or_update_sync(
+    instance_name: str, source_table_name: str, target_table_name: str,
+    catalog_name: Optional[str], database_name: str,
+    primary_key_columns: Optional[List[str]], scheduling_policy: str,
 ) -> Dict[str, Any]:
-    """Set up reverse ETL from Delta table to Lakebase. Creates catalog if needed, then synced table.
-
-    source_table_name: Delta table (catalog.schema.table). target_table_name: Postgres destination.
-    primary_key_columns: Required for incremental sync. scheduling_policy: TRIGGERED/SNAPSHOT/CONTINUOUS.
-    Returns: {catalog, synced_table, created}."""
+    """Create or update a sync configuration."""
     # Derive catalog name from target table if not provided
     if not catalog_name:
         parts = target_table_name.split(".")
@@ -385,17 +513,8 @@ def create_or_update_lakebase_sync(
     }
 
 
-# ============================================================================
-# Tool 7: delete_lakebase_sync
-# ============================================================================
-
-
-@mcp.tool(timeout=60)
-def delete_lakebase_sync(
-    table_name: str,
-    catalog_name: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Remove synced table, optionally UC catalog. Source Delta table unaffected."""
+def _delete_sync(table_name: str, catalog_name: Optional[str]) -> Dict[str, Any]:
+    """Delete a sync configuration."""
     result = {}
 
     sync_result = _delete_synced_table(table_name=table_name)
@@ -409,24 +528,3 @@ def delete_lakebase_sync(
             result["catalog"] = {"error": str(e)}
 
     return result
-
-
-# ============================================================================
-# Tool 8: generate_lakebase_credential
-# ============================================================================
-
-
-@mcp.tool(timeout=30)
-def generate_lakebase_credential(
-    instance_names: Optional[List[str]] = None,
-    endpoint: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Generate OAuth token (~1hr) for Lakebase connection. Use as password with sslmode=require.
-
-    Provide instance_names (provisioned) or endpoint (autoscale)."""
-    if instance_names:
-        return _generate_provisioned_credential(instance_names=instance_names)
-    elif endpoint:
-        return _generate_autoscale_credential(endpoint=endpoint)
-    else:
-        return {"error": "Provide either instance_names (provisioned) or endpoint (autoscale)."}

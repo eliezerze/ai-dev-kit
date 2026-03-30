@@ -1,4 +1,12 @@
-"""SQL tools - Execute SQL queries and get table information."""
+"""SQL tools - Execute SQL queries and get table information.
+
+Tools:
+- execute_sql: Single SQL query
+- execute_sql_multi: Multiple SQL statements with parallel execution
+- manage_warehouse: list, get_best
+- get_table_stats_and_schema: Schema and stats for tables
+- get_volume_folder_details: Schema for volume files
+"""
 
 from typing import Any, Dict, List, Optional, Union
 
@@ -114,15 +122,29 @@ def execute_sql_multi(
 
 
 @mcp.tool(timeout=30)
-def list_warehouses() -> List[Dict[str, Any]]:
-    """List all SQL warehouses. Returns: [{id, name, state, size, ...}]."""
-    return _list_warehouses()
+def manage_warehouse(
+    action: str = "get_best",
+) -> Union[str, List[Dict[str, Any]], Dict[str, Any]]:
+    """Manage SQL warehouses: list, get_best.
 
+    Actions:
+    - list: List all SQL warehouses.
+      Returns: {warehouses: [{id, name, state, size, ...}]}.
+    - get_best: Get best available warehouse ID. Prefers running, then starting, smaller sizes.
+      Returns: {warehouse_id} or {warehouse_id: null, error}."""
+    act = action.lower()
 
-@mcp.tool(timeout=30)
-def get_best_warehouse() -> Optional[str]:
-    """Get best available warehouse ID. Prefers running, then starting, smaller sizes."""
-    return _get_best_warehouse()
+    if act == "list":
+        return {"warehouses": _list_warehouses()}
+
+    elif act == "get_best":
+        warehouse_id = _get_best_warehouse()
+        if warehouse_id:
+            return {"warehouse_id": warehouse_id}
+        return {"warehouse_id": None, "error": "No available warehouses found"}
+
+    else:
+        return {"error": f"Invalid action '{action}'. Valid actions: list, get_best"}
 
 
 @mcp.tool(timeout=60)

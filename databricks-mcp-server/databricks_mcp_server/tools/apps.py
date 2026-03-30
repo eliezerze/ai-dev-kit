@@ -1,9 +1,7 @@
 """App tools - Manage Databricks Apps lifecycle.
 
-Provides 3 workflow-oriented tools following the Lakebase pattern:
-- create_or_update_app: idempotent create + optional deploy
-- get_app: get details by name (with optional logs), or list all
-- delete_app: delete by name
+Consolidated into 1 tool:
+- manage_app: create_or_update, get, list, delete
 """
 
 import logging
@@ -49,21 +47,86 @@ def _find_app_by_name(name: str) -> Optional[Dict[str, Any]]:
 
 
 # ============================================================================
-# Tool 1: create_or_update_app
+# Tool: manage_app
 # ============================================================================
 
 
 @mcp.tool(timeout=180)
-def create_or_update_app(
-    name: str,
+def manage_app(
+    action: str,
+    # For create_or_update/get/delete:
+    name: Optional[str] = None,
+    # For create_or_update:
     source_code_path: Optional[str] = None,
     description: Optional[str] = None,
     mode: Optional[str] = None,
+    # For get:
+    include_logs: bool = False,
+    deployment_id: Optional[str] = None,
+    # For list:
+    name_contains: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create app if not exists, optionally deploy. Deploys latest code if source_code_path provided.
+    """Manage Databricks Apps: create, deploy, get, list, delete.
 
-    See databricks-app-python skill for app development guidance.
-    Returns: {name, created: bool, url, status, deployment}."""
+    Actions:
+    - create_or_update: Idempotent create. Deploys if source_code_path provided. Requires name.
+      source_code_path: Volume or workspace path to deploy from.
+      description: App description. mode: Deployment mode.
+      Returns: {name, created: bool, url, status, deployment}.
+    - get: Get app details. Requires name.
+      include_logs=True for deployment logs. deployment_id for specific deployment.
+      Returns: {name, url, status, logs}.
+    - list: List all apps. Optional name_contains filter.
+      Returns: {apps: [{name, url, status}, ...]}.
+    - delete: Delete an app. Requires name.
+      Returns: {name, status}.
+
+    See databricks-app-python skill for app development guidance."""
+    act = action.lower()
+
+    if act == "create_or_update":
+        if not name:
+            return {"error": "create_or_update requires: name"}
+        return _create_or_update_app(
+            name=name,
+            source_code_path=source_code_path,
+            description=description,
+            mode=mode,
+        )
+
+    elif act == "get":
+        if not name:
+            return {"error": "get requires: name"}
+        return _get_app_details(
+            name=name,
+            include_logs=include_logs,
+            deployment_id=deployment_id,
+        )
+
+    elif act == "list":
+        return {"apps": _list_apps(name_contains=name_contains)}
+
+    elif act == "delete":
+        if not name:
+            return {"error": "delete requires: name"}
+        return _delete_app_by_name(name=name)
+
+    else:
+        return {"error": f"Invalid action '{action}'. Valid actions: create_or_update, get, list, delete"}
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def _create_or_update_app(
+    name: str,
+    source_code_path: Optional[str],
+    description: Optional[str],
+    mode: Optional[str],
+) -> Dict[str, Any]:
+    """Create app if not exists, optionally deploy."""
     existing = _find_app_by_name(name)
 
     if existing:
@@ -101,47 +164,29 @@ def create_or_update_app(
     return result
 
 
-# ============================================================================
-# Tool 2: get_app
-# ============================================================================
-
-
-@mcp.tool(timeout=30)
-def get_app(
-    name: Optional[str] = None,
-    name_contains: Optional[str] = None,
-    include_logs: bool = False,
-    deployment_id: Optional[str] = None,
+def _get_app_details(
+    name: str,
+    include_logs: bool,
+    deployment_id: Optional[str],
 ) -> Dict[str, Any]:
-    """Get app details or list all. include_logs=True for deployment logs.
+    """Get app details with optional logs."""
+    result = _get_app(name=name)
 
-    Returns: {name, url, status, logs} or {apps: [...]}."""
-    if name:
-        result = _get_app(name=name)
+    if include_logs:
+        try:
+            logs = _get_app_logs(
+                app_name=name,
+                deployment_id=deployment_id,
+            )
+            result["logs"] = logs.get("logs", "")
+            result["logs_deployment_id"] = logs.get("deployment_id")
+        except Exception as e:
+            result["logs_error"] = str(e)
 
-        if include_logs:
-            try:
-                logs = _get_app_logs(
-                    app_name=name,
-                    deployment_id=deployment_id,
-                )
-                result["logs"] = logs.get("logs", "")
-                result["logs_deployment_id"] = logs.get("deployment_id")
-            except Exception as e:
-                result["logs_error"] = str(e)
-
-        return result
-
-    return {"apps": _list_apps(name_contains=name_contains)}
+    return result
 
 
-# ============================================================================
-# Tool 3: delete_app
-# ============================================================================
-
-
-@mcp.tool(timeout=60)
-def delete_app(name: str) -> Dict[str, str]:
+def _delete_app_by_name(name: str) -> Dict[str, str]:
     """Delete a Databricks App."""
     result = _delete_app(name=name)
 

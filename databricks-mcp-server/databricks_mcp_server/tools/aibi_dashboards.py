@@ -3,15 +3,12 @@
 Note: AI/BI dashboards were previously known as Lakeview dashboards.
 The SDK/API still uses the 'lakeview' name internally.
 
-Provides 4 workflow-oriented tools following the Lakebase pattern:
-- create_or_update_dashboard: idempotent create/update with auto-publish
-- get_dashboard: get details by ID, or list all
-- delete_dashboard: move to trash (renamed from trash_dashboard for consistency)
-- publish_dashboard: publish or unpublish via boolean toggle
+Consolidated into 1 tool:
+- manage_dashboard: create_or_update, get, list, delete, publish, unpublish
 """
 
 import json
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from databricks_tools_core.aibi_dashboards import (
     create_or_update_dashboard as _create_or_update_dashboard,
@@ -33,115 +30,122 @@ def _delete_dashboard_resource(resource_id: str) -> None:
 register_deleter("dashboard", _delete_dashboard_resource)
 
 
-# ============================================================================
-# Tool 1: create_or_update_dashboard
-# ============================================================================
-
-
 @mcp.tool(timeout=120)
-def create_or_update_dashboard(
-    display_name: str,
-    parent_path: str,
-    serialized_dashboard: Union[str, dict],
-    warehouse_id: str,
+def manage_dashboard(
+    action: str,
+    # For create_or_update:
+    display_name: Optional[str] = None,
+    parent_path: Optional[str] = None,
+    serialized_dashboard: Optional[Union[str, dict]] = None,
+    warehouse_id: Optional[str] = None,
+    # For create_or_update publish option:
     publish: bool = True,
-) -> Dict[str, Any]:
-    """Create/update AI/BI dashboard from JSON. MUST test queries with execute_sql() first!
-
-    Widget structure: queries is TOP-LEVEL SIBLING of spec (NOT inside spec, NOT named_queries).
-    fields[].name MUST match encodings fieldName exactly. Use datasetName (camelCase).
-    Versions: counter/table/filter=2, bar/line/pie=3. Layout: 6-col grid.
-    Filter types: filter-multi-select, filter-single-select, filter-date-range-picker.
-    Text widget uses textbox_spec (no spec block). See databricks-aibi-dashboards skill.
-
-    Returns: {success, dashboard_id, path, url, published, error}."""
-    # MCP deserializes JSON params, so serialized_dashboard may arrive as a dict
-    if isinstance(serialized_dashboard, dict):
-        serialized_dashboard = json.dumps(serialized_dashboard)
-
-    result = _create_or_update_dashboard(
-        display_name=display_name,
-        parent_path=parent_path,
-        serialized_dashboard=serialized_dashboard,
-        warehouse_id=warehouse_id,
-        publish=publish,
-    )
-
-    # Track resource on successful create/update
-    try:
-        if result.get("success") and result.get("dashboard_id"):
-            from ..manifest import track_resource
-
-            track_resource(
-                resource_type="dashboard",
-                name=display_name,
-                resource_id=result["dashboard_id"],
-                url=result.get("url"),
-            )
-    except Exception:
-        pass  # best-effort tracking
-
-    return result
-
-
-# ============================================================================
-# Tool 2: get_dashboard
-# ============================================================================
-
-
-@mcp.tool(timeout=30)
-def get_dashboard(
-    dashboard_id: str = None,
+    # For get/delete/publish/unpublish:
+    dashboard_id: Optional[str] = None,
+    # For list:
     page_size: int = 25,
-) -> Dict[str, Any]:
-    """Get dashboard by ID or list all. Pass dashboard_id for one, omit to list all."""
-    if dashboard_id:
-        return _get_dashboard(dashboard_id=dashboard_id)
-
-    return _list_dashboards(page_size=page_size)
-
-
-# ============================================================================
-# Tool 3: delete_dashboard
-# ============================================================================
-
-
-@mcp.tool(timeout=30)
-def delete_dashboard(dashboard_id: str) -> Dict[str, str]:
-    """Soft-delete dashboard (moves to trash). Returns: {status, message}."""
-    result = _trash_dashboard(dashboard_id=dashboard_id)
-    try:
-        from ..manifest import remove_resource
-
-        remove_resource(resource_type="dashboard", resource_id=dashboard_id)
-    except Exception:
-        pass
-    return result
-
-
-# ============================================================================
-# Tool 4: publish_dashboard
-# ============================================================================
-
-
-@mcp.tool(timeout=60)
-def publish_dashboard(
-    dashboard_id: str,
-    warehouse_id: str = None,
-    publish: bool = True,
+    # For publish:
     embed_credentials: bool = True,
 ) -> Dict[str, Any]:
-    """Publish/unpublish dashboard. publish=False to unpublish. warehouse_id required for publish.
+    """Manage AI/BI dashboards: create, update, get, list, delete, publish.
 
-    embed_credentials=True allows users without data access to view (uses SP permissions)."""
-    if not publish:
+    Actions:
+    - create_or_update: Create/update dashboard from JSON. MUST test queries with execute_sql() first!
+      Requires display_name, parent_path, serialized_dashboard, warehouse_id.
+      publish=True (default) auto-publishes after create.
+      Returns: {success, dashboard_id, path, url, published, error}.
+    - get: Get dashboard details. Requires dashboard_id.
+      Returns: dashboard config and metadata.
+    - list: List all dashboards. Optional page_size (default 25).
+      Returns: {dashboards: [...]}.
+    - delete: Soft-delete (moves to trash). Requires dashboard_id.
+      Returns: {status, message}.
+    - publish: Publish dashboard. Requires dashboard_id, warehouse_id.
+      embed_credentials=True allows users without data access to view.
+      Returns: {status, dashboard_id}.
+    - unpublish: Unpublish dashboard. Requires dashboard_id.
+      Returns: {status, dashboard_id}.
+
+    Widget structure rules (for create_or_update):
+    - queries is TOP-LEVEL SIBLING of spec (NOT inside spec, NOT named_queries)
+    - fields[].name MUST match encodings fieldName exactly
+    - Use datasetName (camelCase, not dataSetName)
+    - Versions: counter/table/filter=2, bar/line/pie=3
+    - Layout: 6-column grid
+    - Filter types: filter-multi-select, filter-single-select, filter-date-range-picker
+    - Text widget uses textbox_spec (no spec block)
+
+    See databricks-aibi-dashboards skill for full widget structure reference."""
+    act = action.lower()
+
+    if act == "create_or_update":
+        if not all([display_name, parent_path, serialized_dashboard, warehouse_id]):
+            return {"error": "create_or_update requires: display_name, parent_path, serialized_dashboard, warehouse_id"}
+
+        # MCP deserializes JSON params, so serialized_dashboard may arrive as a dict
+        if isinstance(serialized_dashboard, dict):
+            serialized_dashboard = json.dumps(serialized_dashboard)
+
+        result = _create_or_update_dashboard(
+            display_name=display_name,
+            parent_path=parent_path,
+            serialized_dashboard=serialized_dashboard,
+            warehouse_id=warehouse_id,
+            publish=publish,
+        )
+
+        # Track resource on successful create/update
+        try:
+            if result.get("success") and result.get("dashboard_id"):
+                from ..manifest import track_resource
+
+                track_resource(
+                    resource_type="dashboard",
+                    name=display_name,
+                    resource_id=result["dashboard_id"],
+                    url=result.get("url"),
+                )
+        except Exception:
+            pass
+
+        return result
+
+    elif act == "get":
+        if not dashboard_id:
+            return {"error": "get requires: dashboard_id"}
+        return _get_dashboard(dashboard_id=dashboard_id)
+
+    elif act == "list":
+        return _list_dashboards(page_size=page_size)
+
+    elif act == "delete":
+        if not dashboard_id:
+            return {"error": "delete requires: dashboard_id"}
+        result = _trash_dashboard(dashboard_id=dashboard_id)
+        try:
+            from ..manifest import remove_resource
+            remove_resource(resource_type="dashboard", resource_id=dashboard_id)
+        except Exception:
+            pass
+        return result
+
+    elif act == "publish":
+        if not dashboard_id:
+            return {"error": "publish requires: dashboard_id"}
+        if not warehouse_id:
+            return {"error": "publish requires: warehouse_id"}
+        return _publish_dashboard(
+            dashboard_id=dashboard_id,
+            warehouse_id=warehouse_id,
+            embed_credentials=embed_credentials,
+        )
+
+    elif act == "unpublish":
+        if not dashboard_id:
+            return {"error": "unpublish requires: dashboard_id"}
         return _unpublish_dashboard(dashboard_id=dashboard_id)
 
-    if not warehouse_id:
-        return {"error": "warehouse_id is required for publishing."}
-
-    return _publish_dashboard(
-        dashboard_id=dashboard_id,
-        warehouse_id=warehouse_id,
-        embed_credentials=embed_credentials,
-    )
+    else:
+        return {
+            "error": f"Invalid action '{action}'. Valid actions: create_or_update, get, list, delete, publish, unpublish"
+        }
