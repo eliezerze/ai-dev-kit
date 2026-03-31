@@ -27,20 +27,65 @@ Use this skill when:
 
 ## MCP Tools
 
-### Space Management
+### manage_genie - Space Management
 
-| Tool | Purpose |
-|------|---------|
-| `create_or_update_genie` | Create or update a Genie Space (supports `serialized_space`) |
-| `get_genie` |  Get space details (by ID and support `include_serialized_space` parameter) or list all spaces (no ID) |
-| `delete_genie` | Delete a Genie Space |
-| `migrate_genie` | Export (`type="export"`) or import (`type="import"`) a Genie Space for cloning / migration |
+| Action | Description | Required Params |
+|--------|-------------|-----------------|
+| `create_or_update` | Idempotent create/update a space | display_name, table_identifiers (or serialized_space) |
+| `get` | Get space details | space_id |
+| `list` | List all spaces | (none) |
+| `delete` | Delete a space | space_id |
+| `export` | Export space config for migration/backup | space_id |
+| `import` | Import space from serialized config | warehouse_id, serialized_space |
 
-### Conversation API
+**Example usage:**
+```python
+# Create a new space
+manage_genie(
+    action="create_or_update",
+    display_name="Sales Analytics",
+    table_identifiers=["catalog.schema.customers", "catalog.schema.orders"],
+    description="Explore sales data with natural language",
+    sample_questions=["What were total sales last month?"]
+)
 
-| Tool | Purpose |
-|------|---------|
-| `ask_genie` | Ask a question or follow-up (`conversation_id` optional) |
+# Get space details with full config
+manage_genie(action="get", space_id="space_123", include_serialized_space=True)
+
+# List all spaces
+manage_genie(action="list")
+
+# Export for migration
+exported = manage_genie(action="export", space_id="space_123")
+
+# Import to new workspace
+manage_genie(
+    action="import",
+    warehouse_id="warehouse_456",
+    serialized_space=exported["serialized_space"],
+    title="Sales Analytics (Prod)"
+)
+```
+
+### ask_genie - Conversation API (Query)
+
+Ask natural language questions to a Genie Space. Pass `conversation_id` for follow-up questions.
+
+```python
+# Start a new conversation
+result = ask_genie(
+    space_id="space_123",
+    question="What were total sales last month?"
+)
+# Returns: {question, conversation_id, message_id, status, sql, columns, data, row_count}
+
+# Follow-up question in same conversation
+result = ask_genie(
+    space_id="space_123",
+    question="Break that down by region",
+    conversation_id=result["conversation_id"]
+)
+```
 
 ### Supporting Tools
 
@@ -66,7 +111,8 @@ get_table_stats_and_schema(
 ### 2. Create the Genie Space
 
 ```python
-create_or_update_genie(
+manage_genie(
+    action="create_or_update",
     display_name="Sales Analytics",
     table_identifiers=[
         "my_catalog.sales.customers",
@@ -95,15 +141,15 @@ ask_genie(
 Export a space (preserves all tables, instructions, SQL examples, and layout):
 
 ```python
-exported = migrate_genie(type="export", space_id="your_space_id")
+exported = manage_genie(action="export", space_id="your_space_id")
 # exported["serialized_space"] contains the full config
 ```
 
 Clone to a new space (same catalog):
 
 ```python
-migrate_genie(
-    type="import",
+manage_genie(
+    action="import",
     warehouse_id=exported["warehouse_id"],
     serialized_space=exported["serialized_space"],
     title=exported["title"],  # override title; omit to keep original
@@ -111,7 +157,7 @@ migrate_genie(
 )
 ```
 
-> **Cross-workspace migration:** Each MCP server is workspace-scoped. Configure one server entry per workspace profile in your IDE's MCP config, then `migrate_genie(type="export")` from the source server and `migrate_genie(type="import")` via the target server. See [spaces.md §Migration](spaces.md#migrating-across-workspaces-with-catalog-remapping) for the full workflow.
+> **Cross-workspace migration:** Each MCP server is workspace-scoped. Configure one server entry per workspace profile in your IDE's MCP config, then `manage_genie(action="export")` from the source server and `manage_genie(action="import")` via the target server. See [spaces.md §Migration](spaces.md#migrating-across-workspaces-with-catalog-remapping) for the full workflow.
 
 ## Reference Files
 
