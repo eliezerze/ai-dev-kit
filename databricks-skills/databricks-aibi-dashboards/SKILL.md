@@ -22,9 +22,10 @@ Create Databricks AI/BI dashboards (formerly Lakeview dashboards). **Follow thes
 │          - Verify column names match what widgets will reference   │
 │          - Verify data types are correct (dates, numbers, strings) │
 ├─────────────────────────────────────────────────────────────────────┤
-│  STEP 4: Build dashboard JSON using ONLY verified queries          │
+│  STEP 4: Write dashboard JSON to LOCAL FILE (e.g., /tmp/dashboard.json)     │
 ├─────────────────────────────────────────────────────────────────────┤
-│  STEP 5: Deploy via manage_dashboard(action="create_or_update")    │
+│  STEP 5: Deploy via manage_dashboard(dashboard_file_path="/tmp/dashboard.json") │
+│          - To update: edit the local file, then call manage_dashboard again │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,26 +44,44 @@ Create Databricks AI/BI dashboards (formerly Lakeview dashboards). **Follow thes
 
 | Action | Description | Required Params |
 |--------|-------------|-----------------|
-| `create_or_update` | Deploy dashboard JSON (only after validation!) | display_name, parent_path, serialized_dashboard, warehouse_id |
+| `create_or_update` | Deploy dashboard from local JSON file (only after validation!) | display_name, parent_path, dashboard_file_path, warehouse_id |
 | `get` | Get dashboard details by ID | dashboard_id |
 | `list` | List all dashboards | (none) |
 | `delete` | Move dashboard to trash | dashboard_id |
 | `publish` | Publish a dashboard | dashboard_id, warehouse_id |
 | `unpublish` | Unpublish a dashboard | dashboard_id |
 
-**Optional create_or_update params:** `genie_space_id` (link Genie), `catalog`/`schema` (defaults for unqualified table names)
+**Optional create_or_update params:**
+| Param | Description |
+|-------|-------------|
+| `publish` | Auto-publish after create (default: True) |
+| `genie_space_id` | Link a Genie space to enable "Ask Genie" button on the dashboard |
+| `catalog` | Default catalog for unqualified table names in dataset SQL |
+| `schema` | Default schema for unqualified table names in dataset SQL |
+
+> **Note:** `catalog`/`schema` only affect unqualified table names. Fully-qualified names (`catalog.schema.table`) are unaffected.
+
+**File-based workflow (recommended):**
+1. Write dashboard JSON to a local file (e.g., `/tmp/sales_dashboard.json`)
+2. Deploy using `manage_dashboard(dashboard_file_path="/tmp/sales_dashboard.json", ...)`
+3. To update: edit the local file, then call `manage_dashboard` again
+
+This approach makes iterative development easier - just edit the file and redeploy.
 
 **Example usage:**
 ```python
-# Create/update dashboard
+# Deploy dashboard from local file
 manage_dashboard(
     action="create_or_update",
     display_name="Sales Dashboard",
     parent_path="/Workspace/Users/me/dashboards",
-    serialized_dashboard=dashboard_json,
+    dashboard_file_path="/tmp/sales_dashboard.json",  # local file path
     warehouse_id="abc123",
-    publish=True  # auto-publish after create
+    publish=True,  # auto-publish after create
+    genie_space_id="genie_space_id_123"  # optional: link Genie for Q&A
 )
+
+# To update: edit /tmp/sales_dashboard.json, then call manage_dashboard again
 
 # Get dashboard details
 manage_dashboard(action="get", dashboard_id="dashboard_123")
