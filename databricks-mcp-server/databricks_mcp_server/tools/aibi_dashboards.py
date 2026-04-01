@@ -71,7 +71,7 @@ def manage_dashboard(
     - Versions: counter/table/filter=2, bar/line/pie=3
     - Layout: 6-column grid
     - Filter types: filter-multi-select, filter-single-select, filter-date-range-picker
-    - Text widget uses textbox_spec (no spec block)ƒ◊
+    - Text widget uses textbox_spec (no spec block)
 
     See databricks-aibi-dashboards skill for full widget structure reference."""
     act = action.lower()
