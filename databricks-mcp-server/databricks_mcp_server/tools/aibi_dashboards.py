@@ -47,8 +47,15 @@ def manage_dashboard(
 ) -> Dict[str, Any]:
     """Manage AI/BI dashboards: create, update, get, list, delete, publish.
 
+    CRITICAL: Before calling this tool to create or edit a dashboard, you MUST:
+    0. Review the databricks-aibi-dashboards skill to understand widget definitions.
+       You must EXACTLY follow the JSON structure detailed in the skill.
+    1. Call get_table_stats_and_schema() to get table schemas for your queries.
+    2. Call execute_sql() to TEST EVERY dataset query before using in dashboard.
+    If you skip validation, widgets WILL show errors!
+
     Actions:
-    - create_or_update: Create/update dashboard from JSON. MUST test queries with execute_sql() first!
+    - create_or_update: Create/update dashboard from JSON.
       Requires display_name, parent_path, serialized_dashboard, warehouse_id.
       publish=True (default) auto-publishes after create.
       Returns: {success, dashboard_id, path, url, published, error}.
@@ -71,9 +78,7 @@ def manage_dashboard(
     - Versions: counter/table/filter=2, bar/line/pie=3
     - Layout: 6-column grid
     - Filter types: filter-multi-select, filter-single-select, filter-date-range-picker
-    - Text widget uses textbox_spec (no spec block)
-
-    See databricks-aibi-dashboards skill for full widget structure reference."""
+    - Text widget uses textbox_spec (no spec block)"""
     act = action.lower()
 
     if act == "create_or_update":
