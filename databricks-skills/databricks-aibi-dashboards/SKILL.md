@@ -22,14 +22,23 @@ Create Databricks AI/BI dashboards (formerly Lakeview dashboards). **Follow thes
 │          - Verify column names match what widgets will reference   │
 │          - Verify data types are correct (dates, numbers, strings) │
 ├─────────────────────────────────────────────────────────────────────┤
-│  STEP 4: Write dashboard JSON to LOCAL FILE (e.g., /tmp/dashboard.json)     │
+│  STEP 4: Write dashboard JSON to LOCAL FILE (e.g., ./dashboard.json)        │
 ├─────────────────────────────────────────────────────────────────────┤
-│  STEP 5: Deploy via manage_dashboard(dashboard_file_path="/tmp/dashboard.json") │
+│  STEP 5: Deploy via manage_dashboard(dashboard_file_path="./dashboard.json") │
 │          - To update: edit the local file, then call manage_dashboard again │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 **WARNING: If you deploy without testing queries, widgets WILL show "Invalid widget definition" errors!**
+
+## Design Best Practices
+
+Apply unless user specifies otherwise (adapt to the use-case/project):
+
+- **Global date filter**: When data has temporal columns, add a date range filter. Most dashboards need time-based filtering.
+- **KPI time bounds**: Use time-bounded metrics that enable period comparison (MoM, YoY). Unbounded "all-time" totals are less actionable.
+- **Value formatting**: Format values based on their meaning — currency with symbol, percentages with %, large numbers compacted (K/M/B).
+- **Chart selection**: Match cardinality to chart type. Few distinct values → pie/bar with color grouping; many values → table.
 
 ## Available MCP Tools
 
@@ -62,11 +71,9 @@ Create Databricks AI/BI dashboards (formerly Lakeview dashboards). **Follow thes
 > **Note:** `catalog`/`schema` only affect unqualified table names. Fully-qualified names (`catalog.schema.table`) are unaffected.
 
 **File-based workflow (recommended):**
-1. Write dashboard JSON to a local file (e.g., `/tmp/sales_dashboard.json`)
-2. Deploy using `manage_dashboard(dashboard_file_path="/tmp/sales_dashboard.json", ...)`
+1. Write dashboard JSON to a local file (e.g., `./sales_dashboard.json`)
+2. Deploy using `manage_dashboard(dashboard_file_path="./sales_dashboard.json", ...)`
 3. To update: edit the local file, then call `manage_dashboard` again
-
-This approach makes iterative development easier - just edit the file and redeploy.
 
 **Example usage:**
 ```python
@@ -74,14 +81,13 @@ This approach makes iterative development easier - just edit the file and redepl
 manage_dashboard(
     action="create_or_update",
     display_name="Sales Dashboard",
-    parent_path="/Workspace/Users/me/dashboards",
-    dashboard_file_path="/tmp/sales_dashboard.json",  # local file path
+    parent_path="/Workspace/Users/{user_email}/my_project/dashboards",
+    dashboard_file_path="./sales_dashboard.json",
     warehouse_id="abc123",
-    publish=True,  # auto-publish after create
     genie_space_id="genie_space_id_123"  # optional: link Genie for Q&A
 )
 
-# To update: edit /tmp/sales_dashboard.json, then call manage_dashboard again
+# To update: edit ./sales_dashboard.json, then call manage_dashboard again
 
 # Get dashboard details
 manage_dashboard(action="get", dashboard_id="dashboard_123")

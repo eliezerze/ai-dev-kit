@@ -71,9 +71,9 @@ def manage_dashboard(
       Returns: {status, dashboard_id}.
 
 Workflow for create_or_update:
-    1. Write dashboard JSON to a local file (e.g., /tmp/my_dashboard.json)
+    1. Write dashboard JSON to a local file (e.g., ./my_dashboard.json)
     2. Test all SQL queries via execute_sql()
-    3. Call manage_dashboard(action="create_or_update", dashboard_file_path="/tmp/my_dashboard.json", ...)
+    3. Call manage_dashboard(action="create_or_update", dashboard_file_path="./my_dashboard.json", ...)
     4. To update: edit the local file, then call manage_dashboard again
 
     See databricks-aibi-dashboards skill for full widget structure reference."""
