@@ -44,6 +44,7 @@ Synthetic data should demonstrate how Databricks helps solve real business probl
 9. **Use Spark + Faker + Pandas UDFs** — Scalable, parallel. Polars only if user explicitly wants local + <30K rows
 10. **Serverless compute** — Unless user requests classic cluster
 11. **No `.cache()` or `.persist()`** — Not supported on serverless. Write to Delta, read back for joins
+12. **No Python loops or `.collect()`** — Use Spark parallelism. No driver-side iteration, avoid Pandas↔Spark conversions
 
 ## Generation Planning Workflow
 
@@ -173,6 +174,20 @@ customers_df.write.mode("overwrite").parquet(f"/Volumes/{CATALOG}/{SCHEMA}/raw_d
 - **Parquet to Volume** (default): `df.write.parquet("/Volumes/.../raw_data/table")` — raw data for pipelines
 - **Delta Table**: `df.write.saveAsTable("catalog.schema.table")` — if user wants queryable tables
 - **JSON/CSV**: small dimension tables, replicate legacy systems
+
+## Performance Rules
+
+Generated scripts must be highly performant. **Never** do these:
+
+| Anti-Pattern | Why It's Slow | Do This Instead |
+|--------------|---------------|-----------------|
+| Python loops on driver | Single-threaded, no parallelism | Use `spark.range()` + Spark operations |
+| `.collect()` then iterate | Brings all data to driver memory | Keep data in Spark, use DataFrame ops |
+| Pandas → Spark → Pandas | Serialization overhead, defeats distribution | Stay in Spark, use `pandas_udf` only for UDFs |
+| Read/write temp files | Unnecessary I/O | Chain DataFrame transformations |
+| Scalar UDFs | Row-by-row processing | Use `pandas_udf` for batch processing |
+
+**Good pattern:** `spark.range()` → Spark transforms → `pandas_udf` for Faker → write directly
 
 ## Common Patterns
 
