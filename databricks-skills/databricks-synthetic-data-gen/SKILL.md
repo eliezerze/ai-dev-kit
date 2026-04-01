@@ -159,6 +159,7 @@ customers_df = spark.range(0, 10000, numPartitions=16).select(
 )
 
 # Write to Volume as Parquet (default for raw data)
+# Path is a folder with table name: /Volumes/catalog/schema/raw_data/customers/
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.{SCHEMA}.raw_data")
 customers_df.write.mode("overwrite").parquet(f"/Volumes/{CATALOG}/{SCHEMA}/raw_data/customers")
