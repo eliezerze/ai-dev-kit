@@ -44,7 +44,27 @@ class TimeoutHandlingMiddleware(Middleware):
         arguments = context.message.arguments
 
         try:
-            return await call_next(context)
+            result = await call_next(context)
+
+            # Fix for FastMCP not populating structured_content automatically.
+            # When a tool has a return type annotation (e.g., -> Dict[str, Any]),
+            # FastMCP generates an outputSchema but doesn't set structured_content.
+            # MCP SDK then fails validation: "outputSchema defined but no structured output"
+            # We fix this by parsing the JSON text content and setting structured_content.
+            if result and not result.structured_content and result.content:
+                if len(result.content) == 1 and isinstance(result.content[0], TextContent):
+                    try:
+                        parsed = json.loads(result.content[0].text)
+                        if isinstance(parsed, dict):
+                            # Create new ToolResult with structured_content populated
+                            result = ToolResult(
+                                content=result.content,
+                                structured_content=parsed,
+                            )
+                    except (json.JSONDecodeError, TypeError):
+                        pass  # Not valid JSON, leave as-is
+
+            return result
 
         except TimeoutError as e:
             # In Python 3.11+, asyncio.TimeoutError is an alias for TimeoutError,
