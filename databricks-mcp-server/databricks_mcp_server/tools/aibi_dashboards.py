@@ -52,8 +52,11 @@ def manage_dashboard(
     """Manage AI/BI dashboards: create, update, get, list, delete, publish.
 
     CRITICAL: Before calling this tool to create or edit a dashboard, you MUST:
-    0. Review the databricks-aibi-dashboards skill to understand widget definitions.
-       You must EXACTLY follow the JSON structure detailed in the skill.
+    0. Read the complete example at databricks-skills/databricks-aibi-dashboards/4-examples.md
+       to understand the exact JSON structure required. If you are not familiar with the
+       dashboard skill, first read the full skill (SKILL.md), then the widget specifications
+       (1-widget-specifications.md, 2-advanced-widget-specifications.md), and finally the
+       example. Sending valid JSON is critical - invalid structure will break the dashboard.
     1. Call get_table_stats_and_schema() to get table schemas for your queries.
     2. Call execute_sql() to TEST EVERY dataset query before using in dashboard.
     If you skip validation, widgets WILL show errors!
