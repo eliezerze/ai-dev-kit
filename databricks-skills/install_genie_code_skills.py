@@ -74,7 +74,6 @@ DATABRICKS_EXTRA_FILES = {
     "databricks-genie": ["spaces.md", "conversation.md"],
     "databricks-bundles": ["alerts_guidance.md", "SDP_guidance.md"],
     "databricks-iceberg": ["1-managed-iceberg-tables.md", "2-uniform-and-compatibility.md", "3-iceberg-rest-catalog.md", "4-snowflake-interop.md", "5-external-engine-interop.md"],
-    "databricks-app-apx": ["backend-patterns.md", "best-practices.md", "frontend-patterns.md"],
     "databricks-app-python": ["1-authorization.md", "2-app-resources.md", "3-frameworks.md", "4-deployment.md", "5-lakebase.md", "6-mcp-approach.md", "examples/llm_config.py", "examples/fm-minimal-chat.py", "examples/fm-parallel-calls.py", "examples/fm-structured-outputs.py"],
     "databricks-jobs": ["task-types.md", "triggers-schedules.md", "notifications-monitoring.md", "examples.md"],
     "databricks-python-sdk": ["doc-index.md", "examples/1-authentication.py", "examples/2-clusters-and-jobs.py", "examples/3-sql-and-warehouses.py", "examples/4-unity-catalog.py", "examples/5-serving-and-vector-search.py"],
@@ -96,6 +95,10 @@ MLFLOW_EXTRA_FILES = {
     "analyze-mlflow-trace": ["references/trace-structure.md"],
     "instrumenting-with-mlflow-tracing": ["references/advanced-patterns.md", "references/distributed-tracing.md", "references/feedback-collection.md", "references/production.md", "references/python.md", "references/typescript.md"],
     "querying-mlflow-metrics": ["references/api_reference.md", "scripts/fetch_metrics.py"],
+}
+
+APX_EXTRA_FILES = {
+    "databricks-app-apx": ["backend-patterns.md", "frontend-patterns.md"],
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -123,9 +126,16 @@ def _upload(w: WorkspaceClient, workspace_path: str, content: bytes):
     )
 
 
-def install_skill(w: WorkspaceClient, skill_name: str, base_url: str, extra_files: list[str], skills_path: str) -> bool:
-    """Download and upload one skill (SKILL.md + extra files)."""
-    skill_url = f"{base_url}/{skill_name}"
+def install_skill(w: WorkspaceClient, skill_name: str, base_url: str, extra_files: list[str], skills_path: str, source_path: str | None = "") -> bool:
+    """Download and upload one skill (SKILL.md + extra files).
+    source_path: "" = use skill_name as subdirectory (default), None = files at base_url root, str = custom subdirectory.
+    """
+    if source_path is None:
+        skill_url = base_url
+    elif source_path:
+        skill_url = f"{base_url}/{source_path}"
+    else:
+        skill_url = f"{base_url}/{skill_name}"
     skill_md = _download(f"{skill_url}/SKILL.md")
     if skill_md is None:
         print(f"  SKIP {skill_name} (could not download SKILL.md)")
@@ -183,11 +193,11 @@ for skill in selected:
         installed += ok
         failed += (not ok)
 
-# APX skills
+# APX skills (files are at the repo root, not in a skill-name subdirectory)
 for skill in selected:
     if skill in APX_SKILLS:
-        extras = DATABRICKS_EXTRA_FILES.get(skill, [])
-        ok = install_skill(w, skill, APX_RAW, extras, skills_path)
+        extras = APX_EXTRA_FILES.get(skill, [])
+        ok = install_skill(w, skill, APX_RAW, extras, skills_path, source_path=None)
         installed += ok
         failed += (not ok)
 
