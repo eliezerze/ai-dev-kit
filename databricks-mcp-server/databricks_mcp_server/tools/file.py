@@ -2,16 +2,25 @@
 
 Consolidated into 1 tool:
 - manage_workspace_files: upload, delete
+
+This module is a thin wrapper around databricks_tools_core.file.workflows.
+All business logic lives in the workflows module.
 """
 
 from typing import Any, Dict, Optional
 
-from databricks_tools_core.file import (
-    delete_from_workspace as _delete_from_workspace,
-    upload_to_workspace as _upload_to_workspace,
-)
+from databricks_tools_core.file.workflows import manage_workspace_files as _manage_workspace_files
 
 from ..server import mcp
+
+
+# CLI_MAPPING for skill transformation
+CLI_MAPPING = {
+    "manage_workspace_files": {
+        "upload": "aidevkit workspace-files upload",
+        "delete": "aidevkit workspace-files delete",
+    },
+}
 
 
 @mcp.tool(timeout=120)
@@ -37,41 +46,11 @@ def manage_workspace_files(
       Returns: {workspace_path, success, error}.
 
     workspace_path format: /Workspace/Users/user@example.com/path/to/files"""
-    act = action.lower()
-
-    if act == "upload":
-        if not local_path:
-            return {"error": "upload requires: local_path"}
-        result = _upload_to_workspace(
-            local_path=local_path,
-            workspace_path=workspace_path,
-            max_workers=max_workers,
-            overwrite=overwrite,
-        )
-        return {
-            "local_folder": result.local_folder,
-            "remote_folder": result.remote_folder,
-            "total_files": result.total_files,
-            "successful": result.successful,
-            "failed": result.failed,
-            "success": result.success,
-            "failed_uploads": [
-                {"local_path": r.local_path, "error": r.error} for r in result.get_failed_uploads()
-            ]
-            if result.failed > 0
-            else [],
-        }
-
-    elif act == "delete":
-        result = _delete_from_workspace(
-            workspace_path=workspace_path,
-            recursive=recursive,
-        )
-        return {
-            "workspace_path": result.workspace_path,
-            "success": result.success,
-            "error": result.error,
-        }
-
-    else:
-        return {"error": f"Invalid action '{action}'. Valid actions: upload, delete"}
+    return _manage_workspace_files(
+        action=action,
+        workspace_path=workspace_path,
+        local_path=local_path,
+        max_workers=max_workers,
+        overwrite=overwrite,
+        recursive=recursive,
+    )

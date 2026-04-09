@@ -2,17 +2,26 @@
 
 Consolidated into 1 tool:
 - manage_serving_endpoint: get, list, query
+
+This module is a thin wrapper around databricks_tools_core.serving.workflows.
+All business logic lives in the workflows module.
 """
 
 from typing import Any, Dict, List, Optional
 
-from databricks_tools_core.serving import (
-    get_serving_endpoint_status as _get_serving_endpoint_status,
-    query_serving_endpoint as _query_serving_endpoint,
-    list_serving_endpoints as _list_serving_endpoints,
-)
+from databricks_tools_core.serving.workflows import manage_serving_endpoint as _manage_serving_endpoint
 
 from ..server import mcp
+
+
+# CLI_MAPPING for skill transformation
+CLI_MAPPING = {
+    "manage_serving_endpoint": {
+        "get": "aidevkit serving get",
+        "list": "aidevkit serving list",
+        "query": "aidevkit serving query",
+    },
+}
 
 
 @mcp.tool(timeout=120)
@@ -46,30 +55,13 @@ def manage_serving_endpoint(
       Returns: {choices: [...]} for chat or {predictions: [...]} for ML.
 
     See databricks-model-serving skill for endpoint configuration."""
-    act = action.lower()
-
-    if act == "get":
-        if not name:
-            return {"error": "get requires: name"}
-        return _get_serving_endpoint_status(name=name)
-
-    elif act == "list":
-        endpoints = _list_serving_endpoints(limit=limit)
-        return {"endpoints": endpoints}
-
-    elif act == "query":
-        if not name:
-            return {"error": "query requires: name"}
-        if not any([messages, inputs, dataframe_records]):
-            return {"error": "query requires one of: messages, inputs, dataframe_records"}
-        return _query_serving_endpoint(
-            name=name,
-            messages=messages,
-            inputs=inputs,
-            dataframe_records=dataframe_records,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-
-    else:
-        return {"error": f"Invalid action '{action}'. Valid actions: get, list, query"}
+    return _manage_serving_endpoint(
+        action=action,
+        name=name,
+        messages=messages,
+        inputs=inputs,
+        dataframe_records=dataframe_records,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        limit=limit,
+    )

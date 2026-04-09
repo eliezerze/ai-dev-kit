@@ -1,6 +1,6 @@
 """Unit tests for SQL output formatting (markdown vs JSON)."""
 
-from databricks_mcp_server.tools.sql import _format_results_markdown
+from databricks_tools_core.sql.workflows import format_results_markdown as _format_results_markdown
 
 
 class TestFormatResultsMarkdown:
