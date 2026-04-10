@@ -15,11 +15,16 @@ from ..server import mcp
 
 
 # CLI_MAPPING for skill transformation
+# Note: create_or_update and delete are not implemented in MCP - use SDK directly
 CLI_MAPPING = {
     "manage_serving_endpoint": {
         "get": "aidevkit serving get",
         "list": "aidevkit serving list",
         "query": "aidevkit serving query",
+        # Placeholder mappings for CLI commands that don't have MCP equivalents
+        # These allow skill files to reference them, but won't work via MCP
+        "create_or_update": "aidevkit serving create-or-update",
+        "delete": "aidevkit serving delete",
     },
 }
 

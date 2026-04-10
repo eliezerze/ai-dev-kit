@@ -32,6 +32,7 @@ CLI_MAPPING = {
         "update": "aidevkit pipelines update",
         "delete": "aidevkit pipelines delete",
         "find_by_name": "aidevkit pipelines find-by-name",
+        "list": "aidevkit pipelines list",
     },
     "manage_pipeline_run": {
         "start": "aidevkit pipelines run-start",

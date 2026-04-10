@@ -13,11 +13,11 @@ Create Databricks AI/BI dashboards (formerly Lakeview dashboards). **Follow thes
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 1: Get table schemas via aidevkit sql query                  │
+│  STEP 1: Get table schemas via aidevkit sql table-stats            │
 ├─────────────────────────────────────────────────────────────────────┤
 │  STEP 2: Write SQL queries for each dataset                        │
 ├─────────────────────────────────────────────────────────────────────┤
-│  STEP 3: TEST EVERY QUERY via aidevkit sql query ← DO NOT SKIP!    │
+│  STEP 3: TEST EVERY QUERY via aidevkit sql execute ← DO NOT SKIP!  │
 │          - If query fails, FIX IT before proceeding                │
 │          - Verify column names match what widgets will reference   │
 │          - Verify data types are correct (dates, numbers, strings) │
@@ -147,7 +147,7 @@ y=12: Table (w=6, h=6) - Detailed data
 | High cardinality | **Table only** | customer_id, order_id, SKU |
 
 **Before creating any chart with color/grouping:**
-1. Check column cardinality (use `aidevkit sql query` to check distinct values)
+1. Check column cardinality (use `aidevkit sql execute` to check distinct values)
 2. If >10 distinct values, aggregate to higher level OR use TOP-N + "Other" bucket
 3. For high-cardinality dimensions, use a table widget instead of a chart
 
@@ -163,7 +163,7 @@ Before deploying, verify:
 7. Counter datasets: use `disaggregated: true` for 1-row datasets, `disaggregated: false` with aggregation for multi-row
 8. Percent values are 0-1 (not 0-100)
 9. SQL uses Spark syntax (date_sub, not INTERVAL)
-10. **All SQL queries tested via `aidevkit sql query` and return expected data**
+10. **All SQL queries tested via `aidevkit sql execute` and return expected data**
 
 ---
 

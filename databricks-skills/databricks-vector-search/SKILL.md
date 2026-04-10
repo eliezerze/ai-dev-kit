@@ -296,13 +296,13 @@ databricks vector-search indexes delete-index \
 
 ```bash
 # Endpoint management
-aidevkit vector-search endpoint create --name my-endpoint --type STANDARD
+aidevkit vector-search endpoint create-or-update --name my-endpoint --type STANDARD
 aidevkit vector-search endpoint get --name my-endpoint
 aidevkit vector-search endpoint list
 aidevkit vector-search endpoint delete --name my-endpoint
 
 # Index management
-aidevkit vector-search index create --name catalog.schema.my_index \
+aidevkit vector-search index create-or-update --name catalog.schema.my_index \
     --endpoint-name my-endpoint --primary-key id --index-type DELTA_SYNC \
     --delta-sync-spec '{"source_table":"catalog.schema.docs","embedding_source_columns":[{"name":"content","embedding_model_endpoint_name":"databricks-gte-large-en"}]}'
 aidevkit vector-search index get --name catalog.schema.my_index

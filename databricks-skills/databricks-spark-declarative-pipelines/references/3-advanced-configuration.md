@@ -159,7 +159,7 @@ Install pip dependencies for serverless pipelines:
 
 ### Development Mode Pipeline
 
-Use `manage_pipeline(action="create_or_update")` tool with:
+Use `aidevkit pipelines create-or-update` with:
 - `name`: "my_dev_pipeline"
 - `root_path`: "/Workspace/Users/user@example.com/my_pipeline"
 - `catalog`: "dev_catalog"
@@ -176,7 +176,7 @@ Use `manage_pipeline(action="create_or_update")` tool with:
 
 ### Non-Serverless with Dedicated Cluster
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "serverless": false,
@@ -193,7 +193,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Continuous Streaming Pipeline
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "continuous": true,
@@ -205,7 +205,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Using Instance Pool
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "serverless": false,
@@ -220,7 +220,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Custom Event Log Location
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "event_log": {
@@ -233,7 +233,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Pipeline with Email Notifications
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "notifications": [{
@@ -245,7 +245,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Production Pipeline with Autoscaling
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "serverless": false,
@@ -274,7 +274,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Run as Service Principal
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "run_as": {
@@ -285,7 +285,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Continuous Pipeline with Restart Window
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "continuous": true,
@@ -299,7 +299,7 @@ Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
 
 ### Serverless with Python Dependencies
 
-Use `manage_pipeline(action="create_or_update")` tool with `extra_settings`:
+Use `aidevkit pipelines create-or-update` with `--extra-settings`:
 ```json
 {
     "serverless": true,

@@ -38,5 +38,5 @@ aidevkit workspace switch --host https://adb-xxx.azuredatabricks.net
 aidevkit workspace login --host https://adb-xxx.azuredatabricks.net
 
 # Get current user info
-aidevkit auth whoami
+aidevkit user whoami
 ```

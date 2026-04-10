@@ -36,56 +36,19 @@ Supported `AggregationGranularity` values: `AGGREGATION_GRANULARITY_5_MINUTES`, 
 
 ---
 
-## MCP Tools
+## CLI Commands
 
-Use the `manage_uc_monitors` tool for all monitor operations:
+> **Note:** The aidevkit CLI does not yet have monitor commands. Use the Python SDK directly (see examples below).
 
-| Action | Description |
-|--------|-------------|
-| `create` | Create a quality monitor on a table |
-| `get` | Get monitor details and status |
-| `run_refresh` | Trigger a metric refresh |
-| `list_refreshes` | List refresh history |
-| `delete` | Delete the monitor (assets are not deleted) |
+For monitor operations, use the Python SDK `w.data_quality` API:
 
-### Create a Monitor
-
-> **Note:** The MCP tool currently only creates **snapshot** monitors. For TimeSeries or InferenceLog monitors, use the Python SDK directly (see below).
-
-```python
-manage_uc_monitors(
-    action="create",
-    table_name="catalog.schema.my_table",
-    output_schema_name="catalog.schema",
-)
-```
-
-### Get Monitor Status
-
-```python
-manage_uc_monitors(
-    action="get",
-    table_name="catalog.schema.my_table",
-)
-```
-
-### Trigger a Refresh
-
-```python
-manage_uc_monitors(
-    action="run_refresh",
-    table_name="catalog.schema.my_table",
-)
-```
-
-### Delete a Monitor
-
-```python
-manage_uc_monitors(
-    action="delete",
-    table_name="catalog.schema.my_table",
-)
-```
+| Operation | SDK Method |
+|-----------|------------|
+| Create monitor | `w.data_quality.create_monitor()` |
+| Get monitor | `w.data_quality.get_monitor()` |
+| Trigger refresh | `w.data_quality.create_refresh()` |
+| List refreshes | `w.data_quality.list_refreshes()` |
+| Delete monitor | `w.data_quality.delete_monitor()` |
 
 ---
 
@@ -300,7 +263,7 @@ LIMIT 100;
 ---
 
 > **Note:** Data profiling was formerly known as Lakehouse Monitoring. The legacy SDK accessor
-> `w.lakehouse_monitors` and the MCP tool `manage_uc_monitors` still use the previous API.
+> `w.lakehouse_monitors` still uses the previous API.
 
 ## Resources
 

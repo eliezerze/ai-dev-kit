@@ -27,15 +27,12 @@ Use this skill when:
 
 ### Inspect Source Table Schema
 
-Before creating a metric view, call `get_table_stats_and_schema` to understand available columns for dimensions and measures:
+Before creating a metric view, use the CLI to understand available columns for dimensions and measures:
 
-```
-get_table_stats_and_schema(
-    catalog="catalog",
-    schema="schema",
-    table_names=["orders"],
-    table_stat_level="SIMPLE"  # Use "DETAILED" for cardinality, min/max, histograms
-)
+```bash
+aidevkit sql table-stats --catalog "catalog" --schema "schema" \
+    --tables "orders" --level SIMPLE
+# Use --level DETAILED for cardinality, min/max, histograms
 ```
 
 ### Create a Metric View

@@ -2,16 +2,16 @@
 
 Build a complete Retrieval-Augmented Generation pipeline: prepare documents, create a vector index, query it, and wire it into an agent.
 
-## MCP Tools Used
+## CLI Commands Used
 
-| Tool | Step |
-|------|------|
-| `execute_sql` | Create source table, insert documents |
-| `manage_vs_endpoint(action="create")` | Create compute endpoint |
-| `manage_vs_index(action="create")` | Create Delta Sync index with managed embeddings |
-| `manage_vs_index(action="sync")` | Trigger index sync |
-| `manage_vs_index(action="get")` | Check index status |
-| `query_vs_index` | Test similarity search |
+| Command | Step |
+|---------|------|
+| `aidevkit sql execute` | Create source table, insert documents |
+| `aidevkit vector-search endpoint create-or-update` | Create compute endpoint |
+| `aidevkit vector-search index create-or-update` | Create Delta Sync index with managed embeddings |
+| `aidevkit vector-search data sync` | Trigger index sync |
+| `aidevkit vector-search index get` | Check index status |
+| `aidevkit vector-search query` | Test similarity search |
 
 ---
 
@@ -34,47 +34,40 @@ INSERT INTO catalog.schema.knowledge_base VALUES
 ('doc-003', 'Delta Lake', 'Delta Lake is an open-source storage layer...', 'storage', current_timestamp());
 ```
 
-Or via MCP:
+Or via CLI:
 
-```python
-execute_sql(sql_query="""
-    CREATE TABLE IF NOT EXISTS catalog.schema.knowledge_base (
-        doc_id STRING,
-        title STRING,
-        content STRING,
-        category STRING,
-        updated_at TIMESTAMP DEFAULT current_timestamp()
-    )
-""")
+```bash
+aidevkit sql execute --sql "CREATE TABLE IF NOT EXISTS catalog.schema.knowledge_base (
+    doc_id STRING,
+    title STRING,
+    content STRING,
+    category STRING,
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)"
 ```
 
 ## Step 2: Create Vector Search Endpoint
 
-```python
-manage_vs_endpoint(
-    action="create",
-    name="my-rag-endpoint",
-    endpoint_type="STORAGE_OPTIMIZED"
-)
+```bash
+aidevkit vector-search endpoint create-or-update --name "my-rag-endpoint" --type STORAGE_OPTIMIZED
 ```
 
 Endpoint creation is asynchronous. Check status:
 
-```python
-manage_vs_endpoint(action="get", name="my-rag-endpoint")
+```bash
+aidevkit vector-search endpoint get --name "my-rag-endpoint"
 # Wait for state: "ONLINE"
 ```
 
 ## Step 3: Create Delta Sync Index
 
-```python
-manage_vs_index(
-    action="create",
-    name="catalog.schema.knowledge_base_index",
-    endpoint_name="my-rag-endpoint",
-    primary_key="doc_id",
-    index_type="DELTA_SYNC",
-    delta_sync_index_spec={
+```bash
+aidevkit vector-search index create-or-update \
+    --name "catalog.schema.knowledge_base_index" \
+    --endpoint-name "my-rag-endpoint" \
+    --primary-key "doc_id" \
+    --index-type "DELTA_SYNC" \
+    --delta-sync-spec '{
         "source_table": "catalog.schema.knowledge_base",
         "embedding_source_columns": [
             {
@@ -84,8 +77,7 @@ manage_vs_index(
         ],
         "pipeline_type": "TRIGGERED",
         "columns_to_sync": ["doc_id", "title", "content", "category"]
-    }
-)
+    }'
 ```
 
 Key decisions:
@@ -95,61 +87,57 @@ Key decisions:
 
 ## Step 4: Sync and Verify
 
-```python
+```bash
 # Trigger initial sync
-manage_vs_index(action="sync", index_name="catalog.schema.knowledge_base_index")
+aidevkit vector-search data sync --index-name "catalog.schema.knowledge_base_index"
 
 # Check status
-manage_vs_index(action="get", index_name="catalog.schema.knowledge_base_index")
+aidevkit vector-search index get --name "catalog.schema.knowledge_base_index"
 # Wait for state: "ONLINE"
 ```
 
 ## Step 5: Query the Index
 
-```python
+```bash
 # Semantic search
-query_vs_index(
-    index_name="catalog.schema.knowledge_base_index",
-    columns=["doc_id", "title", "content", "category"],
-    query_text="How do I govern my data?",
-    num_results=3
-)
+aidevkit vector-search query \
+    --index-name "catalog.schema.knowledge_base_index" \
+    --columns "doc_id,title,content,category" \
+    --query-text "How do I govern my data?" \
+    --num-results 3
 ```
 
 ### With Filters
 
 The filter syntax depends on the endpoint type used when creating the index.
 
-```python
+```bash
 # Storage-Optimized endpoint (used in this walkthrough): SQL-like filter syntax
-query_vs_index(
-    index_name="catalog.schema.knowledge_base_index",
-    columns=["doc_id", "title", "content"],
-    query_text="How do I govern my data?",
-    num_results=3,
-    filters="category = 'governance'"
-)
+aidevkit vector-search query \
+    --index-name "catalog.schema.knowledge_base_index" \
+    --columns "doc_id,title,content" \
+    --query-text "How do I govern my data?" \
+    --num-results 3 \
+    --filters "category = 'governance'"
 
 # Standard endpoint (if you created a Standard endpoint instead): JSON filters_json
-query_vs_index(
-    index_name="catalog.schema.my_standard_index",
-    columns=["doc_id", "title", "content"],
-    query_text="How do I govern my data?",
-    num_results=3,
-    filters_json='{"category": "governance"}'
-)
+aidevkit vector-search query \
+    --index-name "catalog.schema.my_standard_index" \
+    --columns "doc_id,title,content" \
+    --query-text "How do I govern my data?" \
+    --num-results 3 \
+    --filters-json '{"category": "governance"}'
 ```
 
 ### Hybrid Search (Vector + Keyword)
 
-```python
-query_vs_index(
-    index_name="catalog.schema.knowledge_base_index",
-    columns=["doc_id", "title", "content"],
-    query_text="Delta Lake ACID transactions",
-    num_results=5,
-    query_type="HYBRID"
-)
+```bash
+aidevkit vector-search query \
+    --index-name "catalog.schema.knowledge_base_index" \
+    --columns "doc_id,title,content" \
+    --query-text "Delta Lake ACID transactions" \
+    --num-results 5 \
+    --query-type "HYBRID"
 ```
 
 ---
@@ -215,8 +203,8 @@ INSERT INTO catalog.schema.knowledge_base VALUES
 
 Then sync:
 
-```python
-manage_vs_index(action="sync", index_name="catalog.schema.knowledge_base_index")
+```bash
+aidevkit vector-search data sync --index-name "catalog.schema.knowledge_base_index"
 ```
 
 ### Delete Documents
@@ -233,9 +221,9 @@ Then sync — the index automatically handles deletions via Delta change data fe
 
 | Issue | Solution |
 |-------|----------|
-| **Index stuck in PROVISIONING** | Endpoint may still be creating. Check `manage_vs_endpoint(action="get")` first |
-| **Query returns no results** | Index may not be synced yet. Run `manage_vs_index(action="sync")` and wait for ONLINE state |
+| **Index stuck in PROVISIONING** | Endpoint may still be creating. Check `aidevkit vector-search endpoint get` first |
+| **Query returns no results** | Index may not be synced yet. Run `aidevkit vector-search data sync` and wait for ONLINE state |
 | **"Column not found in index"** | Column must be in `columns_to_sync`. Recreate index with the column included |
 | **Embeddings not computed** | Ensure `embedding_model_endpoint_name` is a valid serving endpoint |
-| **Stale results after table update** | For TRIGGERED pipelines, you must call `manage_vs_index(action="sync")` manually |
-| **Filter not working** | Standard endpoints use dict-format filters (`filters_json`), Storage-Optimized use SQL-like string filters (`filters`) |
+| **Stale results after table update** | For TRIGGERED pipelines, you must call `aidevkit vector-search data sync` manually |
+| **Filter not working** | Standard endpoints use dict-format filters (`--filters-json`), Storage-Optimized use SQL-like string filters (`--filters`) |

@@ -4,11 +4,11 @@ Use the Genie Conversation API to ask natural language questions to a curated Ge
 
 ## Overview
 
-The `ask_genie` tool allows you to programmatically send questions to a Genie Space and receive SQL-generated answers. Instead of writing SQL directly, you delegate the query generation to Genie, which has been curated with business logic, instructions, and certified queries.
+The `aidevkit genie ask` command allows you to programmatically send questions to a Genie Space and receive SQL-generated answers. Instead of writing SQL directly, you delegate the query generation to Genie, which has been curated with business logic, instructions, and certified queries.
 
-## When to Use `ask_genie`
+## When to Use `aidevkit genie ask`
 
-### Use `ask_genie` When:
+### Use `aidevkit genie ask` When:
 
 | Scenario | Why |
 |----------|-----|
@@ -18,7 +18,7 @@ The `ask_genie` tool allows you to programmatically send questions to a Genie Sp
 | Testing a Genie Space after creating it | Validate the space works correctly |
 | User wants conversational data exploration | Genie handles context for follow-up questions |
 
-### Use Direct SQL (`execute_sql`) Instead When:
+### Use Direct SQL (`aidevkit sql execute`) Instead When:
 
 | Scenario | Why |
 |----------|-----|
@@ -27,25 +27,22 @@ The `ask_genie` tool allows you to programmatically send questions to a Genie Sp
 | Genie Space doesn't exist for this data | Can't use Genie without a space |
 | Need precise control over the query | Direct SQL gives exact control |
 
-## MCP Tools
+## CLI Commands
 
-| Tool | Purpose |
-|------|---------|
-| `ask_genie` | Ask a question or follow-up (`conversation_id` optional) |
+| Command | Purpose |
+|---------|---------|
+| `aidevkit genie ask` | Ask a question or follow-up (`--conversation-id` optional) |
 
 ## Basic Usage
 
 ### Ask a Question
 
-```python
-ask_genie(
-    space_id="01abc123...",
-    question="What were total sales last month?"
-)
+```bash
+aidevkit genie ask --space-id "01abc123..." --question "What were total sales last month?"
 ```
 
-**Response:**
-```python
+**Response (JSON):**
+```json
 {
     "question": "What were total sales last month?",
     "conversation_id": "conv_xyz789",
@@ -62,19 +59,18 @@ ask_genie(
 
 Use the `conversation_id` from the first response to ask follow-up questions with context:
 
-```python
-# First question
-result = ask_genie(
-    space_id="01abc123...",
-    question="What were total sales last month?"
-)
+```bash
+# First question - capture conversation_id from output
+aidevkit genie ask --space-id "01abc123..." \
+    --question "What were total sales last month?" > result.json
+
+# Extract conversation_id
+CONV_ID=$(jq -r '.conversation_id' result.json)
 
 # Follow-up (uses context from first question)
-ask_genie(
-    space_id="01abc123...",
-    question="Break that down by region",
-    conversation_id=result["conversation_id"]
-)
+aidevkit genie ask --space-id "01abc123..." \
+    --question "Break that down by region" \
+    --conversation-id "$CONV_ID"
 ```
 
 Genie remembers the context, so "that" refers to "total sales last month".
@@ -98,33 +94,41 @@ Genie remembers the context, so "that" refers to "total sales last month".
 
 ### Successful Response
 
-```python
-result = ask_genie(space_id, "Who are our top 10 customers?")
+```bash
+# Ask a question and check the response
+aidevkit genie ask --space-id "$SPACE_ID" --question "Who are our top 10 customers?" > result.json
 
-if result["status"] == "COMPLETED":
-    print(f"SQL: {result['sql']}")
-    print(f"Rows: {result['row_count']}")
-    for row in result["data"]:
-        print(row)
+# Check status and extract data
+STATUS=$(jq -r '.status' result.json)
+if [ "$STATUS" = "COMPLETED" ]; then
+    echo "SQL: $(jq -r '.sql' result.json)"
+    echo "Rows: $(jq -r '.row_count' result.json)"
+    jq '.data' result.json
+fi
 ```
 
 ### Failed Response
 
-```python
-result = ask_genie(space_id, "What is the meaning of life?")
+```bash
+aidevkit genie ask --space-id "$SPACE_ID" --question "What is the meaning of life?" > result.json
 
-if result["status"] == "FAILED":
-    print(f"Error: {result['error']}")
+STATUS=$(jq -r '.status' result.json)
+if [ "$STATUS" = "FAILED" ]; then
+    echo "Error: $(jq -r '.error' result.json)"
     # Genie couldn't answer - may need to rephrase or use direct SQL
+fi
 ```
 
 ### Timeout
 
-```python
-result = ask_genie(space_id, question, timeout_seconds=60)
+```bash
+# Specify a timeout
+aidevkit genie ask --space-id "$SPACE_ID" --question "$QUESTION" --timeout 60 > result.json
 
-if result["status"] == "TIMEOUT":
-    print("Query took too long - try a simpler question or increase timeout")
+STATUS=$(jq -r '.status' result.json)
+if [ "$STATUS" = "TIMEOUT" ]; then
+    echo "Query took too long - try a simpler question or increase timeout"
+fi
 ```
 
 ## Example Workflows
@@ -136,7 +140,7 @@ User: "Ask my Sales Genie what the churn rate is"
 
 Claude:
 1. Identifies user wants to use Genie (explicit request)
-2. Calls ask_genie(space_id="sales_genie_id", question="What is the churn rate?")
+2. Runs: aidevkit genie ask --space-id "sales_genie_id" --question "What is the churn rate?"
 3. Returns: "Based on your Sales Genie, the churn rate is 4.2%.
    Genie used this SQL: SELECT ..."
 ```
@@ -147,10 +151,10 @@ Claude:
 User: "I just created a Genie Space for HR data. Can you test it?"
 
 Claude:
-1. Gets the space_id from the user or recent manage_genie(action="create_or_update") result
-2. Calls ask_genie with test questions:
-   - "How many employees do we have?"
-   - "What is the average salary by department?"
+1. Gets the space_id from the user or recent `aidevkit genie create-or-update` result
+2. Runs test questions:
+   - aidevkit genie ask --space-id "$ID" --question "How many employees do we have?"
+   - aidevkit genie ask --space-id "$ID" --question "What is the average salary by department?"
 3. Reports results: "Your HR Genie is working. It correctly answered..."
 ```
 
@@ -160,11 +164,11 @@ Claude:
 User: "Use my analytics Genie to explore sales trends"
 
 Claude:
-1. ask_genie(space_id, "What were total sales by month this year?")
+1. aidevkit genie ask --space-id "$ID" --question "What were total sales by month this year?"
 2. User: "Which month had the highest growth?"
-3. ask_genie(space_id, "Which month had the highest growth?", conversation_id=conv_id)
+3. aidevkit genie ask --space-id "$ID" --question "Which month had the highest growth?" --conversation-id "$CONV_ID"
 4. User: "What products drove that growth?"
-5. ask_genie(space_id, "What products drove that growth?", conversation_id=conv_id)
+5. aidevkit genie ask --space-id "$ID" --question "What products drove that growth?" --conversation-id "$CONV_ID"
 ```
 
 ## Best Practices
@@ -173,28 +177,32 @@ Claude:
 
 Don't reuse conversations across unrelated questions:
 
-```python
+```bash
 # Good: New conversation for new topic
-result1 = ask_genie(space_id, "What were sales last month?")  # New conversation
-result2 = ask_genie(space_id, "How many employees do we have?")  # New conversation
+aidevkit genie ask --space-id "$SPACE_ID" --question "What were sales last month?"  # New conversation
+aidevkit genie ask --space-id "$SPACE_ID" --question "How many employees do we have?"  # New conversation
 
 # Good: Follow-up for related question
-result1 = ask_genie(space_id, "What were sales last month?")
-result2 = ask_genie(space_id, "Break that down by product",
-                    conversation_id=result1["conversation_id"])  # Related follow-up
+aidevkit genie ask --space-id "$SPACE_ID" --question "What were sales last month?" > result.json
+CONV_ID=$(jq -r '.conversation_id' result.json)
+aidevkit genie ask --space-id "$SPACE_ID" \
+    --question "Break that down by product" \
+    --conversation-id "$CONV_ID"  # Related follow-up
 ```
 
 ### Handle Clarification Requests
 
 Genie may ask for clarification instead of returning results:
 
-```python
-result = ask_genie(space_id, "Show me the data")
+```bash
+aidevkit genie ask --space-id "$SPACE_ID" --question "Show me the data" > result.json
 
-if result.get("text_response"):
+TEXT_RESPONSE=$(jq -r '.text_response // empty' result.json)
+if [ -n "$TEXT_RESPONSE" ]; then
     # Genie is asking for clarification
-    print(f"Genie asks: {result['text_response']}")
+    echo "Genie asks: $TEXT_RESPONSE"
     # Rephrase with more specifics
+fi
 ```
 
 ### Set Appropriate Timeouts
@@ -203,13 +211,14 @@ if result.get("text_response"):
 - Complex joins: 60-120 seconds
 - Large data scans: 120+ seconds
 
-```python
+```bash
 # Quick question
-ask_genie(space_id, "How many orders today?", timeout_seconds=30)
+aidevkit genie ask --space-id "$SPACE_ID" --question "How many orders today?" --timeout 30
 
 # Complex analysis
-ask_genie(space_id, "Calculate customer lifetime value for all customers",
-          timeout_seconds=180)
+aidevkit genie ask --space-id "$SPACE_ID" \
+    --question "Calculate customer lifetime value for all customers" \
+    --timeout 180
 ```
 
 ## Troubleshooting
@@ -218,7 +227,7 @@ ask_genie(space_id, "Calculate customer lifetime value for all customers",
 
 - Verify the `space_id` is correct
 - Check you have access to the space
-- Use `manage_genie(action="get", space_id=...)` to verify it exists
+- Use `aidevkit genie get --space-id ...` to verify it exists
 
 ### "Query timed out"
 

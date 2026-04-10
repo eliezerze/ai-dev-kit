@@ -9,22 +9,20 @@ Convert HTML content to PDF documents and upload them to Unity Catalog Volumes.
 
 ## Overview
 
-The `generate_and_upload_pdf` MCP tool converts HTML to PDF and uploads to a Unity Catalog Volume. You (the LLM) generate the HTML content, and the tool handles conversion and upload.
+The `aidevkit pdf generate` command converts HTML to PDF and uploads to a Unity Catalog Volume. You (the LLM) generate the HTML content, and the tool handles conversion and upload.
 
-## Tool Signature
+## Command Signature
 
-```
-generate_and_upload_pdf(
-    html_content: str,      # Complete HTML document
-    filename: str,          # PDF filename (e.g., "report.pdf")
-    catalog: str,           # Unity Catalog name
-    schema: str,            # Schema name
-    volume: str = "raw_data",  # Volume name (default: "raw_data")
-    folder: str = None,     # Optional subfolder
-)
+```bash
+aidevkit pdf generate --html "<html>...</html>" \
+    --filename <pdf_filename> \
+    --catalog <catalog_name> \
+    --schema <schema_name> \
+    [--volume <volume_name>] \
+    [--folder <subfolder>]
 ```
 
-**Returns:**
+**Returns (JSON):**
 ```json
 {
     "success": true,
@@ -37,9 +35,8 @@ generate_and_upload_pdf(
 
 Generate a simple PDF:
 
-```
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
+```bash
+aidevkit pdf generate --html '<!DOCTYPE html>
 <html>
 <head>
     <style>
@@ -55,11 +52,10 @@ generate_and_upload_pdf(
         <p>Revenue increased 15% year-over-year...</p>
     </div>
 </body>
-</html>''',
-    filename="q1_report.pdf",
-    catalog="my_catalog",
-    schema="my_schema"
-)
+</html>' \
+    --filename "q1_report.pdf" \
+    --catalog "my_catalog" \
+    --schema "my_schema"
 ```
 
 ## Performance: Generate Multiple PDFs in Parallel
@@ -68,43 +64,36 @@ generate_and_upload_pdf(
 
 ### Example: Generate 5 PDFs in Parallel
 
-Make 5 simultaneous `generate_and_upload_pdf` calls:
+Make 5 simultaneous `aidevkit pdf generate` calls:
 
-```
+```bash
 # Call 1
-generate_and_upload_pdf(
-    html_content="<html>...Employee Handbook content...</html>",
-    filename="employee_handbook.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+aidevkit pdf generate --html "<html>...Employee Handbook content...</html>" \
+    --filename "employee_handbook.pdf" \
+    --catalog "hr_catalog" --schema "policies" --folder "2024" &
 
 # Call 2 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Leave Policy content...</html>",
-    filename="leave_policy.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+aidevkit pdf generate --html "<html>...Leave Policy content...</html>" \
+    --filename "leave_policy.pdf" \
+    --catalog "hr_catalog" --schema "policies" --folder "2024" &
 
 # Call 3 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Code of Conduct content...</html>",
-    filename="code_of_conduct.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+aidevkit pdf generate --html "<html>...Code of Conduct content...</html>" \
+    --filename "code_of_conduct.pdf" \
+    --catalog "hr_catalog" --schema "policies" --folder "2024" &
 
 # Call 4 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Benefits Guide content...</html>",
-    filename="benefits_guide.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+aidevkit pdf generate --html "<html>...Benefits Guide content...</html>" \
+    --filename "benefits_guide.pdf" \
+    --catalog "hr_catalog" --schema "policies" --folder "2024" &
 
 # Call 5 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Remote Work Policy content...</html>",
-    filename="remote_work_policy.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+aidevkit pdf generate --html "<html>...Remote Work Policy content...</html>" \
+    --filename "remote_work_policy.pdf" \
+    --catalog "hr_catalog" --schema "policies" --folder "2024" &
+
+# Wait for all background jobs
+wait
 ```
 
 By calling these in parallel (not sequentially), 5 PDFs that would take 15-25 seconds sequentially complete in 3-5 seconds total.
@@ -223,9 +212,8 @@ PlutoPrint supports modern CSS3:
 
 Generate API documentation, user guides, or technical specs:
 
-```
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
+```bash
+aidevkit pdf generate --html '<!DOCTYPE html>
 <html>
 <head><style>
     body { font-family: monospace; margin: 40px; }
@@ -243,18 +231,16 @@ generate_and_upload_pdf(
     <pre>Authorization: Bearer {token}
 Content-Type: application/json</pre>
 </body>
-</html>''',
-    filename="api_reference.pdf",
-    catalog="docs_catalog",
-    schema="api_docs"
-)
+</html>' \
+    --filename "api_reference.pdf" \
+    --catalog "docs_catalog" \
+    --schema "api_docs"
 ```
 
 ### Pattern 2: Business Reports
 
-```
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
+```bash
+aidevkit pdf generate --html '<!DOCTYPE html>
 <html>
 <head><style>
     body { font-family: Georgia, serif; margin: 50px; }
@@ -273,19 +259,17 @@ generate_and_upload_pdf(
         <div class="metric-label">Growth</div>
     </div>
 </body>
-</html>''',
-    filename="q1_2024_report.pdf",
-    catalog="finance",
-    schema="reports",
-    folder="quarterly"
-)
+</html>' \
+    --filename "q1_2024_report.pdf" \
+    --catalog "finance" \
+    --schema "reports" \
+    --folder "quarterly"
 ```
 
 ### Pattern 3: HR Policies
 
-```
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
+```bash
+aidevkit pdf generate --html '<!DOCTYPE html>
 <html>
 <head><style>
     body { font-family: Arial; margin: 40px; line-height: 1.8; }
@@ -305,11 +289,10 @@ generate_and_upload_pdf(
         <strong>Note:</strong> Leave requests must be submitted at least 2 weeks in advance.
     </div>
 </body>
-</html>''',
-    filename="leave_policy.pdf",
-    catalog="hr_catalog",
-    schema="policies"
-)
+</html>' \
+    --filename "leave_policy.pdf" \
+    --catalog "hr_catalog" \
+    --schema "policies"
 ```
 
 ## Workflow for Multiple Documents
@@ -318,7 +301,7 @@ When asked to generate multiple PDFs:
 
 1. **Plan the documents**: Determine titles, content structure for each
 2. **Generate HTML for each**: Create complete HTML documents
-3. **Call tool in parallel**: Make multiple simultaneous `generate_and_upload_pdf` calls
+3. **Call tool in parallel**: Make multiple simultaneous `aidevkit pdf generate` calls
 4. **Report results**: Summarize successful uploads and any errors
 
 ## Prerequisites

@@ -45,7 +45,8 @@ def _flatten_mapping(mcp_tool_name: str, mapping_value, params: list[tuple[str, 
             param_str = ", ".join(f'{k}="{v}"' for k, v in params)
             result[mapping_value] = f"{mcp_tool_name}({param_str})"
         else:
-            result[mapping_value] = mcp_tool_name
+            # Standalone tool with no action param - still add () for consistency
+            result[mapping_value] = f"{mcp_tool_name}()"
     elif isinstance(mapping_value, dict):
         # Nested dict: recurse with accumulated params
         for key, value in mapping_value.items():

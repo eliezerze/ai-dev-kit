@@ -7,18 +7,12 @@ Production-ready templates you can adapt for your use case.
 ```python
 import json
 
-# Step 1: Check table schema
-table_info = get_table_stats_and_schema(catalog="samples", schema="nyctaxi")
+# Step 1: Check table schema (use CLI)
+# aidevkit uc table describe --catalog samples --schema nyctaxi --table trips
 
-# Step 2: Test queries
-execute_sql("SELECT COUNT(*) as trips, AVG(fare_amount) as avg_fare, AVG(trip_distance) as avg_distance FROM samples.nyctaxi.trips")
-execute_sql("""
-    SELECT pickup_zip, COUNT(*) as trip_count
-    FROM samples.nyctaxi.trips
-    GROUP BY pickup_zip
-    ORDER BY trip_count DESC
-    LIMIT 10
-""")
+# Step 2: Test queries (use CLI)
+# aidevkit sql execute --sql "SELECT COUNT(*) as trips, AVG(fare_amount) as avg_fare, AVG(trip_distance) as avg_distance FROM samples.nyctaxi.trips"
+# aidevkit sql execute --sql "SELECT pickup_zip, COUNT(*) as trip_count FROM samples.nyctaxi.trips GROUP BY pickup_zip ORDER BY trip_count DESC LIMIT 10"
 
 # Step 3: Build dashboard JSON
 dashboard = {
@@ -195,15 +189,14 @@ dashboard = {
     }]
 }
 
-# Step 4: Deploy
-result = manage_dashboard(
-    action="create_or_update",
-    display_name="NYC Taxi Dashboard",
-    parent_path="/Workspace/Users/me/dashboards",
-    serialized_dashboard=json.dumps(dashboard),
-    warehouse_id=manage_warehouse(action="get_best"),
-)
-print(result["url"])
+# Step 4: Deploy (use CLI)
+# First get a warehouse ID:
+# aidevkit compute warehouse get-best
+# Then deploy:
+# aidevkit dashboards create-or-update --name "NYC Taxi Dashboard" \
+#     --parent-path "/Workspace/Users/me/dashboards" \
+#     --dashboard-json '<dashboard JSON string>' \
+#     --warehouse-id <warehouse_id>
 ```
 
 ## Dashboard with Global Filters
@@ -293,13 +286,9 @@ dashboard_with_filters = {
     ]
 }
 
-# Deploy with filters
-result = manage_dashboard(
-    action="create_or_update",
-    display_name="Sales Dashboard with Filters",
-    parent_path="/Workspace/Users/me/dashboards",
-    serialized_dashboard=json.dumps(dashboard_with_filters),
-    warehouse_id=manage_warehouse(action="get_best"),
-)
-print(result["url"])
+# Deploy with filters (use CLI)
+# aidevkit dashboards create-or-update --name "Sales Dashboard with Filters" \
+#     --parent-path "/Workspace/Users/me/dashboards" \
+#     --dashboard-json '<dashboard_with_filters JSON string>' \
+#     --warehouse-id <warehouse_id>
 ```

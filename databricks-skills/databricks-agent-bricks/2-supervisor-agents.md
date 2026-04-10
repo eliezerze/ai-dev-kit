@@ -40,7 +40,7 @@ Before creating a Supervisor Agent, you need agents of one or both types:
 - Existing Genie spaces for SQL-based data exploration
 - Great for analytics, metrics, and data-driven questions
 - No separate endpoint deployment required - reference the space directly
-- To find a Genie space by name, use `find_genie_by_name(display_name="My Genie")`
+- To find a Genie space by name, use `aidevkit genie list` and filter by name
 - **Note**: There is NO system table for Genie spaces - do not try to query `system.ai.genie_spaces`
 
 ## Unity Catalog Functions
@@ -137,40 +137,16 @@ Reference the UC Connection using the `connection_name` field:
 
 Example showing integration of Genie, KA, and external MCP:
 
-```python
-manage_mas(
-    action="create_or_update",
-    name="AP_Invoice_Supervisor",
-    agents=[
-        {
-            "name": "billing_analyst",
-            "genie_space_id": "01abc123...",
-            "description": "SQL analytics on AP invoice data: spending trends, vendor analysis, aging reports"
-        },
-        {
-            "name": "policy_expert",
-            "ka_tile_id": "f32c5f73...",
-            "description": "Answers questions about AP policies, approval workflows, and compliance requirements from policy documents"
-        },
-        {
-            "name": "ap_operations",
-            "connection_name": "ap_invoice_mcp",
-            "description": (
-                "Execute AP operations: approve/reject/flag invoices, search invoice details, "
-                "get vendor summaries, trigger batch workflows. Use for ANY action or write operation."
-            )
-        }
-    ],
-    description="AP automation assistant with analytics, policy guidance, and operational actions",
-    instructions="""
-    Route queries as follows:
-    - Data questions (invoice counts, spend analysis, vendor metrics) → billing_analyst
-    - Policy questions (thresholds, SLAs, compliance rules) → policy_expert
-    - Actions (approve, reject, flag, search, workflows) → ap_operations
-
-    When a user asks to approve, reject, or flag an invoice, ALWAYS use ap_operations.
-    """
-)
+```bash
+aidevkit agent-bricks mas create-or-update \
+    --name "AP_Invoice_Supervisor" \
+    --agents '[
+        {"name": "billing_analyst", "genie_space_id": "01abc123...", "description": "SQL analytics on AP invoice data: spending trends, vendor analysis, aging reports"},
+        {"name": "policy_expert", "ka_tile_id": "f32c5f73...", "description": "Answers questions about AP policies, approval workflows, and compliance requirements from policy documents"},
+        {"name": "ap_operations", "connection_name": "ap_invoice_mcp", "description": "Execute AP operations: approve/reject/flag invoices, search invoice details, get vendor summaries, trigger batch workflows. Use for ANY action or write operation."}
+    ]' \
+    --description "AP automation assistant with analytics, policy guidance, and operational actions" \
+    --instructions "Route queries as follows: Data questions → billing_analyst, Policy questions → policy_expert, Actions → ap_operations. When a user asks to approve, reject, or flag an invoice, ALWAYS use ap_operations."
 ```
 
 ### MCP Connection Testing
@@ -193,7 +169,7 @@ SELECT http_request(
 
 ## Creating a Supervisor Agent
 
-Use the `manage_mas` tool with `action="create_or_update"`:
+Use `aidevkit agent-bricks mas create-or-update`:
 
 - `name`: "Customer Support MAS"
 - `agents`:
@@ -237,8 +213,8 @@ Each agent in the `agents` list needs:
 
 **Note**: Provide exactly one of: `ka_tile_id`, `genie_space_id`, `endpoint_name`, `uc_function_name`, or `connection_name`.
 
-To find a KA tile_id, use `manage_ka(action="find_by_name", name="Your KA Name")`.
-To find a Genie space_id, use `find_genie_by_name(display_name="Your Genie Name")`.
+To find a KA tile_id, use `aidevkit agent-bricks ka find-by-name --name "Your KA Name"`.
+To find a Genie space_id, use `aidevkit genie list` and filter by name.
 
 ### Writing Good Descriptions
 
@@ -264,7 +240,7 @@ After creation, the Supervisor Agent endpoint needs to provision:
 | `ONLINE` | Ready to route queries | - |
 | `OFFLINE` | Not currently running | - |
 
-Use `manage_mas` with `action="get"` to check the status.
+Use `aidevkit agent-bricks mas get` to check the status.
 
 ## Adding Example Questions
 
@@ -346,7 +322,7 @@ Consider adding a general-purpose agent for queries that don't fit elsewhere:
 
 To update an existing Supervisor Agent:
 
-1. **Add/remove agents**: Call `manage_mas` with `action="create_or_update"` and updated `agents` list
+1. **Add/remove agents**: Call `aidevkit agent-bricks mas create-or-update` with updated `agents` list
 2. **Update descriptions**: Change agent descriptions to improve routing
 3. **Modify instructions**: Update routing rules
 
