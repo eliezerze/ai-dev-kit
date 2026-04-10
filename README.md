@@ -75,6 +75,23 @@ bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-ki
 <details>
 <summary><strong>Advanced Options</strong> (click to expand)</summary>
 
+**Choose Interface: CLI (default) or MCP**
+
+The AI Dev Kit supports two interface modes:
+
+| Interface | Flag | Description |
+|-----------|------|-------------|
+| **CLI** (default) | `--cli` | Installs `aidevkit` command-line tool. Skills reference CLI commands like `aidevkit jobs create`. Best for terminal-based workflows. |
+| **MCP** | `--mcp` | Installs MCP server for AI assistants. Skills are transformed to reference MCP tools like `manage_jobs(action="create")`. Best for Claude Code, Cursor, etc. |
+
+```bash
+# Install with CLI interface (default)
+bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh) --cli
+
+# Install with MCP server interface
+bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh) --mcp
+```
+
 **Global installation with force reinstall**
 
 ```bash
@@ -212,6 +229,7 @@ This directory is customizable if you wish to only use certain skills or even cr
 | Component | Description |
 |-----------|-------------|
 | [`databricks-tools-core/`](databricks-tools-core/) | Python library with high-level Databricks functions |
+| [`databricks-aidevkit-cli/`](databricks-aidevkit-cli/) | CLI interface (`aidevkit` command) for terminal workflows |
 | [`databricks-mcp-server/`](databricks-mcp-server/) | MCP server exposing 50+ tools for AI assistants |
 | [`databricks-skills/`](databricks-skills/) | 20 markdown skills teaching Databricks patterns |
 | [`databricks-builder-app/`](databricks-builder-app/) | Full-stack web app with Claude Code integration |
