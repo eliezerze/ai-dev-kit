@@ -297,4 +297,31 @@ Load these for detailed syntax, full parameter lists, and advanced patterns:
 - **Star schema in Gold layer** for BI; OBT acceptable in Silver
 - **Define PK/FK constraints** on dimensional models for query optimization
 - **Use `COLLATE UTF8_LCASE`** for user-facing string columns that need case-insensitive search
-- **Use MCP tools** (`execute_sql`, `execute_sql_multi`) to test and validate all SQL before deploying
+- **Use CLI** (`aidevkit sql execute`, `aidevkit sql execute-multi`) to test and validate all SQL before deploying
+
+---
+
+## CLI Quick Reference
+
+```bash
+# Execute a single SQL query
+aidevkit sql execute --query "SELECT * FROM catalog.schema.table LIMIT 10"
+
+# Execute with specific warehouse
+aidevkit sql execute -q "SELECT 1" --warehouse-id abc123 --format json
+
+# Execute multiple SQL statements
+aidevkit sql execute-multi --content "SELECT 1; SELECT 2; SELECT 3"
+
+# List SQL warehouses
+aidevkit sql warehouse list
+
+# Get best available warehouse
+aidevkit sql warehouse get-best
+
+# Get table stats and schema
+aidevkit sql table-stats --catalog my_catalog --schema my_schema --level DETAILED
+
+# Get volume folder details
+aidevkit sql volume-details --path /Volumes/catalog/schema/volume/data --format parquet
+```

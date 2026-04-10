@@ -80,6 +80,9 @@ fi
 INSTALL_MCP=true
 INSTALL_SKILLS=true
 
+# Interface mode: "cli" (default) or "mcp"
+INTERFACE="${DEVKIT_INTERFACE:-cli}"
+
 # Minimum required versions
 MIN_CLI_VERSION="0.278.0"
 MIN_SDK_VERSION="0.85.0"
@@ -129,6 +132,8 @@ while [ $# -gt 0 ]; do
         -b|--branch)      BRANCH="$2"; shift 2 ;;
         --skills-only)    INSTALL_MCP=false; shift ;;
         --mcp-only)       INSTALL_SKILLS=false; shift ;;
+        --cli)            INTERFACE="cli"; shift ;;
+        --mcp)            INTERFACE="mcp"; shift ;;
         --mcp-path)       USER_MCP_PATH="$2"; shift 2 ;;
         --skills-profile) SKILLS_PROFILE="$2"; shift 2 ;;
         --skills)         USER_SKILLS="$2"; shift 2 ;;
@@ -145,7 +150,9 @@ while [ $# -gt 0 ]; do
             echo "  -p, --profile NAME    Databricks profile (default: DEFAULT)"
             echo "  -b, --branch NAME     Git branch/tag to install (default: latest release)"
             echo "  -g, --global          Install globally for all projects"
-            echo "  --skills-only         Skip MCP server setup"
+            echo "  --cli                 Install CLI interface (default)"
+            echo "  --mcp                 Install MCP server interface"
+            echo "  --skills-only         Skip interface setup (skills only)"
             echo "  --mcp-only            Skip skills installation"
             echo "  --mcp-path PATH       Path to MCP server installation (default: ~/.ai-dev-kit)"
             echo "  --silent              Silent mode (no output except errors)"
@@ -160,6 +167,7 @@ while [ $# -gt 0 ]; do
             echo "  DEVKIT_PROFILE        Databricks config profile"
             echo "  DEVKIT_BRANCH         Git branch/tag to install (default: latest release)"
             echo "  DEVKIT_SCOPE          'project' or 'global'"
+            echo "  DEVKIT_INTERFACE      'cli' (default) or 'mcp'"
             echo "  DEVKIT_TOOLS          Comma-separated list of tools"
             echo "  DEVKIT_FORCE          Set to 'true' to force reinstall"
             echo "  DEVKIT_MCP_PATH       Path to MCP server installation"
@@ -1038,10 +1046,14 @@ check_version() {
     fi
 }
 
-# Setup MCP server
+# Setup interface (CLI or MCP server)
 setup_mcp() {
-    step "Setting up MCP server"
-    
+    if [ "$INTERFACE" = "cli" ]; then
+        step "Setting up CLI"
+    else
+        step "Setting up MCP server"
+    fi
+
     # Clone or update repo
     if [ -d "$REPO_DIR/.git" ]; then
         git -C "$REPO_DIR" fetch -q --depth 1 origin "$BRANCH" 2>/dev/null || true
@@ -1054,7 +1066,7 @@ setup_mcp() {
         git -c advice.detachedHead=false clone -q --depth 1 --branch "$BRANCH" "$REPO_URL" "$REPO_DIR"
     fi
     ok "Repository cloned ($BRANCH)"
-    
+
     # Create venv and install
     # On Apple Silicon under Rosetta, force arm64 to avoid architecture mismatch
     # with universal2 Python binaries (see: github.com/databricks-solutions/ai-dev-kit/issues/115)
@@ -1068,10 +1080,35 @@ setup_mcp() {
 
     msg "Installing Python dependencies..."
     $arch_prefix uv venv --python 3.11 --allow-existing "$VENV_DIR" -q 2>/dev/null || $arch_prefix uv venv --allow-existing "$VENV_DIR" -q
-    $arch_prefix uv pip install --python "$VENV_PYTHON" -e "$REPO_DIR/databricks-tools-core" -e "$REPO_DIR/databricks-mcp-server" -q
 
-    "$VENV_PYTHON" -c "import databricks_mcp_server" 2>/dev/null || die "MCP server install failed"
-    ok "MCP server ready"
+    if [ "$INTERFACE" = "cli" ]; then
+        # Install CLI interface
+        $arch_prefix uv pip install --python "$VENV_PYTHON" -e "$REPO_DIR/databricks-tools-core" -e "$REPO_DIR/databricks-aidevkit-cli" -q
+        "$VENV_PYTHON" -c "import aidevkit_cli" 2>/dev/null || die "CLI install failed"
+        ok "CLI ready (aidevkit command)"
+
+        # Create symlink for aidevkit command if not exists
+        local bin_dir="$INSTALL_DIR/bin"
+        mkdir -p "$bin_dir"
+        cat > "$bin_dir/aidevkit" << EOF
+#!/bin/bash
+exec "$VENV_PYTHON" -m aidevkit_cli.main "\$@"
+EOF
+        chmod +x "$bin_dir/aidevkit"
+
+        # Add to PATH hint
+        if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
+            msg ""
+            msg "${Y}Add to your shell profile to use 'aidevkit' command:${N}"
+            msg "  export PATH=\"$bin_dir:\$PATH\""
+            msg ""
+        fi
+    else
+        # Install MCP server
+        $arch_prefix uv pip install --python "$VENV_PYTHON" -e "$REPO_DIR/databricks-tools-core" -e "$REPO_DIR/databricks-mcp-server" -q
+        "$VENV_PYTHON" -c "import databricks_mcp_server" 2>/dev/null || die "MCP server install failed"
+        ok "MCP server ready"
+    fi
 }
 
 # Install skills
@@ -1509,12 +1546,31 @@ summary() {
         echo ""
         echo -e "${G}${B}Installation complete!${N}"
         echo "────────────────────────────────"
-        msg "Location: $INSTALL_DIR"
-        msg "Scope:    $SCOPE"
-        msg "Tools:    $(echo "$TOOLS" | tr ' ' ', ')"
+        msg "Location:  $INSTALL_DIR"
+        msg "Scope:     $SCOPE"
+        msg "Interface: $INTERFACE"
+        msg "Tools:     $(echo "$TOOLS" | tr ' ' ', ')"
         echo ""
         msg "${B}Next steps:${N}"
         local step=1
+
+        # CLI-specific instructions
+        if [ "$INTERFACE" = "cli" ]; then
+            local bin_dir="$INSTALL_DIR/bin"
+            if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
+                msg "${step}. Add to your shell profile: ${B}export PATH=\"$bin_dir:\$PATH\"${N}"
+                step=$((step + 1))
+            fi
+            msg "${step}. Try: ${B}aidevkit --help${N}"
+            step=$((step + 1))
+            msg "${step}. Example: ${B}aidevkit sql execute --query \"SELECT 1\"${N}"
+            step=$((step + 1))
+            msg "${step}. Example: ${B}aidevkit jobs list${N}"
+            echo ""
+            return
+        fi
+
+        # MCP-specific instructions
         if echo "$TOOLS" | grep -q cursor; then
             msg "${R}${step}. Enable MCP in Cursor: ${B}Cursor → Settings → Cursor Settings → Tools & MCP → Toggle 'databricks'${N}"
             step=$((step + 1))
@@ -1720,7 +1776,8 @@ main() {
         echo -e "  Tools:       ${G}$(echo "$TOOLS" | tr ' ' ', ')${N}"
         echo -e "  Profile:     ${G}${PROFILE}${N}"
         echo -e "  Scope:       ${G}${SCOPE}${N}"
-        [ "$INSTALL_MCP" = true ]    && echo -e "  MCP server:  ${G}${INSTALL_DIR}${N}"
+        [ "$INSTALL_MCP" = true ]    && echo -e "  Interface:   ${G}${INTERFACE}${N}"
+        [ "$INSTALL_MCP" = true ]    && echo -e "  Location:    ${G}${INSTALL_DIR}${N}"
         if [ "$INSTALL_SKILLS" = true ]; then
             if [ -n "$USER_SKILLS" ]; then
                 echo -e "  Skills:      ${G}custom selection${N}"
@@ -1730,7 +1787,7 @@ main() {
                 echo -e "  Skills:      ${G}${SKILLS_PROFILE:-all} ($sk_total skills)${N}"
             fi
         fi
-        [ "$INSTALL_MCP" = true ]    && echo -e "  MCP config:  ${G}yes${N}"
+        [ "$INSTALL_MCP" = true ] && [ "$INTERFACE" = "mcp" ] && echo -e "  MCP config:  ${G}yes${N}"
         echo ""
     fi
 
@@ -1764,6 +1821,18 @@ main() {
     # Install skills
     [ "$INSTALL_SKILLS" = true ] && install_skills "$base_dir"
 
+    # Transform skills for MCP mode (replace CLI commands with MCP tool references)
+    if [ "$INSTALL_SKILLS" = true ] && [ "$INTERFACE" = "mcp" ]; then
+        step "Transforming skills for MCP mode"
+        local skills_dir="$REPO_DIR/databricks-skills"
+        if [ -d "$skills_dir" ]; then
+            PYTHONPATH="$REPO_DIR/databricks-mcp-server:$REPO_DIR/databricks-tools-core" \
+                "$VENV_PYTHON" -m databricks_tools_core.skill_transformer --mode mcp "$skills_dir" 2>/dev/null || \
+                warn "Skill transformation failed (non-critical)"
+            ok "Skills transformed for MCP mode"
+        fi
+    fi
+
     # Write GEMINI.md if gemini is selected
     if echo "$TOOLS" | grep -q gemini; then
         if [ "$SCOPE" = "global" ]; then
@@ -1773,8 +1842,8 @@ main() {
         fi
     fi
 
-    # Write MCP configs
-    [ "$INSTALL_MCP" = true ] && write_mcp_configs "$base_dir"
+    # Write MCP configs (only for MCP interface mode)
+    [ "$INSTALL_MCP" = true ] && [ "$INTERFACE" = "mcp" ] && write_mcp_configs "$base_dir"
     
     # Save version
     save_version

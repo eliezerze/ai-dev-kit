@@ -42,11 +42,8 @@ def get_serving_endpoint_status(name: str) -> Dict[str, Any]:
     except Exception as e:
         error_msg = str(e)
         if "RESOURCE_DOES_NOT_EXIST" in error_msg or "404" in error_msg:
-            return {
-                "name": name,
-                "state": "NOT_FOUND",
-                "error": f"Endpoint '{name}' not found",
-            }
+            from databricks.sdk.errors import NotFound
+            raise NotFound(f"Endpoint '{name}' does not exist.")
         raise Exception(f"Failed to get serving endpoint '{name}': {error_msg}")
 
     # Extract state information

@@ -1,1 +1,1 @@
-"""Compute module integration tests."""
+# Compute integration tests

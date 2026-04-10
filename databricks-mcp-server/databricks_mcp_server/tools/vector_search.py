@@ -1,62 +1,60 @@
 """Vector Search tools - Manage endpoints, indexes, and query vector data.
 
-Consolidated into 4 tools:
+Thin MCP wrapper around databricks_tools_core.vector_search.vector_search_api.
+All business logic is in the core module.
+
+4 tools:
 - manage_vs_endpoint: create_or_update, get, list, delete
 - manage_vs_index: create_or_update, get, list, delete
 - query_vs_index: query vectors (hot path - kept separate)
 - manage_vs_data: upsert, delete, scan, sync
 """
 
-import json
-import logging
 from typing import Any, Dict, List, Optional, Union
 
-from databricks_tools_core.vector_search import (
-    create_vs_endpoint as _create_vs_endpoint,
-    get_vs_endpoint as _get_vs_endpoint,
-    list_vs_endpoints as _list_vs_endpoints,
-    delete_vs_endpoint as _delete_vs_endpoint,
-    create_vs_index as _create_vs_index,
-    get_vs_index as _get_vs_index,
-    list_vs_indexes as _list_vs_indexes,
-    delete_vs_index as _delete_vs_index,
-    sync_vs_index as _sync_vs_index,
+from databricks_tools_core.vector_search.vector_search_api import (
+    manage_vs_endpoint as _manage_vs_endpoint,
+    manage_vs_index as _manage_vs_index,
     query_vs_index as _query_vs_index,
-    upsert_vs_data as _upsert_vs_data,
-    delete_vs_data as _delete_vs_data,
-    scan_vs_index as _scan_vs_index,
+    manage_vs_data as _manage_vs_data,
 )
 
+from ..manifest import track_resource
 from ..server import mcp
 
-logger = logging.getLogger(__name__)
+
+# CLI_MAPPING for skill transformation
+CLI_MAPPING = {
+    "manage_vs_endpoint": {
+        "create_or_update": "aidevkit vector-search endpoint create-or-update",
+        "get": "aidevkit vector-search endpoint get",
+        "list": "aidevkit vector-search endpoint list",
+        "delete": "aidevkit vector-search endpoint delete",
+    },
+    "manage_vs_index": {
+        "create_or_update": "aidevkit vector-search index create-or-update",
+        "get": "aidevkit vector-search index get",
+        "list": "aidevkit vector-search index list",
+        "delete": "aidevkit vector-search index delete",
+    },
+    "query_vs_index": "aidevkit vector-search query",
+    "manage_vs_data": {
+        "upsert": "aidevkit vector-search data upsert",
+        "delete": "aidevkit vector-search data delete",
+        "scan": "aidevkit vector-search data scan",
+        "sync": "aidevkit vector-search data sync",
+    },
+}
 
 
-# ============================================================================
-# Helpers
-# ============================================================================
-
-
-def _find_endpoint_by_name(name: str) -> Optional[Dict[str, Any]]:
-    """Find a vector search endpoint by name, returns None if not found."""
-    try:
-        result = _get_vs_endpoint(name=name)
-        if result.get("state") == "NOT_FOUND":
-            return None
-        return result
-    except Exception:
-        return None
-
-
-def _find_index_by_name(index_name: str) -> Optional[Dict[str, Any]]:
-    """Find a vector search index by name, returns None if not found."""
-    try:
-        result = _get_vs_index(index_name=index_name)
-        if result.get("state") == "NOT_FOUND":
-            return None
-        return result
-    except Exception:
-        return None
+def _on_vs_resource_created(resource_type: str, name: str, resource_id: str, url: Optional[str] = None) -> None:
+    """Callback to track vector search resource in MCP manifest."""
+    track_resource(
+        resource_type=resource_type,
+        name=name,
+        resource_id=resource_id,
+        url=url,
+    )
 
 
 # ============================================================================
@@ -85,41 +83,12 @@ def manage_vs_endpoint(
       Returns: {name, status}.
 
     See databricks-vector-search skill for endpoint configuration."""
-    act = action.lower()
-
-    if act == "create_or_update":
-        if not name:
-            return {"error": "create_or_update requires: name"}
-
-        existing = _find_endpoint_by_name(name)
-        if existing:
-            return {**existing, "created": False}
-
-        result = _create_vs_endpoint(name=name, endpoint_type=endpoint_type)
-
-        try:
-            from ..manifest import track_resource
-            track_resource(resource_type="vs_endpoint", name=name, resource_id=name)
-        except Exception:
-            pass
-
-        return {**result, "created": True}
-
-    elif act == "get":
-        if not name:
-            return {"error": "get requires: name"}
-        return _get_vs_endpoint(name=name)
-
-    elif act == "list":
-        return {"endpoints": _list_vs_endpoints()}
-
-    elif act == "delete":
-        if not name:
-            return {"error": "delete requires: name"}
-        return _delete_vs_endpoint(name=name)
-
-    else:
-        return {"error": f"Invalid action '{action}'. Valid actions: create_or_update, get, list, delete"}
+    return _manage_vs_endpoint(
+        action=action,
+        name=name,
+        endpoint_type=endpoint_type,
+        on_resource_created=_on_vs_resource_created,
+    )
 
 
 # ============================================================================
@@ -158,74 +127,16 @@ def manage_vs_index(
       Returns: {name, status}.
 
     See databricks-vector-search skill for full spec details and examples."""
-    act = action.lower()
-
-    if act == "create_or_update":
-        if not all([name, endpoint_name, primary_key]):
-            return {"error": "create_or_update requires: name, endpoint_name, primary_key"}
-
-        existing = _find_index_by_name(name)
-        if existing:
-            return {**existing, "created": False}
-
-        result = _create_vs_index(
-            name=name,
-            endpoint_name=endpoint_name,
-            primary_key=primary_key,
-            index_type=index_type,
-            delta_sync_index_spec=delta_sync_index_spec,
-            direct_access_index_spec=direct_access_index_spec,
-        )
-
-        # Trigger initial sync for DELTA_SYNC indexes
-        if index_type == "DELTA_SYNC" and result.get("status") != "ALREADY_EXISTS":
-            try:
-                _sync_vs_index(index_name=name)
-                result["sync_triggered"] = True
-            except Exception as e:
-                logger.warning("Failed to trigger initial sync for index '%s': %s", name, e)
-                result["sync_triggered"] = False
-
-        try:
-            from ..manifest import track_resource
-            track_resource(resource_type="vs_index", name=name, resource_id=name)
-        except Exception:
-            pass
-
-        return {**result, "created": True}
-
-    elif act == "get":
-        if not name:
-            return {"error": "get requires: name"}
-        return _get_vs_index(index_name=name)
-
-    elif act == "list":
-        if endpoint_name:
-            return {"indexes": _list_vs_indexes(endpoint_name=endpoint_name)}
-
-        # List all indexes across all endpoints
-        all_indexes = []
-        endpoints = _list_vs_endpoints()
-        for ep in endpoints:
-            ep_name = ep.get("name")
-            if not ep_name:
-                continue
-            try:
-                indexes = _list_vs_indexes(endpoint_name=ep_name)
-                for idx in indexes:
-                    idx["endpoint_name"] = ep_name
-                all_indexes.extend(indexes)
-            except Exception:
-                logger.warning("Failed to list indexes on endpoint '%s'", ep_name)
-        return {"indexes": all_indexes}
-
-    elif act == "delete":
-        if not name:
-            return {"error": "delete requires: name"}
-        return _delete_vs_index(index_name=name)
-
-    else:
-        return {"error": f"Invalid action '{action}'. Valid actions: create_or_update, get, list, delete"}
+    return _manage_vs_index(
+        action=action,
+        name=name,
+        endpoint_name=endpoint_name,
+        primary_key=primary_key,
+        index_type=index_type,
+        delta_sync_index_spec=delta_sync_index_spec,
+        direct_access_index_spec=direct_access_index_spec,
+        on_resource_created=_on_vs_resource_created,
+    )
 
 
 # ============================================================================
@@ -258,10 +169,6 @@ def query_vs_index(
     query_type: "ANN" (default, approximate) or "HYBRID" (combines vector + keyword search).
 
     Returns: {columns, data (with similarity score appended), num_results}."""
-    # MCP deserializes JSON params, so filters_json may arrive as a dict
-    if isinstance(filters_json, dict):
-        filters_json = json.dumps(filters_json)
-
     return _query_vs_index(
         index_name=index_name,
         columns=columns,
@@ -307,27 +214,10 @@ def manage_vs_data(
 
     For DIRECT_ACCESS indexes, use upsert/delete to manage data.
     For DELTA_SYNC indexes, use sync to trigger refresh from source table."""
-    act = action.lower()
-
-    if act == "upsert":
-        if inputs_json is None:
-            return {"error": "upsert requires: inputs_json"}
-        # MCP deserializes JSON params, so inputs_json may arrive as a list
-        if isinstance(inputs_json, (dict, list)):
-            inputs_json = json.dumps(inputs_json)
-        return _upsert_vs_data(index_name=index_name, inputs_json=inputs_json)
-
-    elif act == "delete":
-        if primary_keys is None:
-            return {"error": "delete requires: primary_keys"}
-        return _delete_vs_data(index_name=index_name, primary_keys=primary_keys)
-
-    elif act == "scan":
-        return _scan_vs_index(index_name=index_name, num_results=num_results)
-
-    elif act == "sync":
-        _sync_vs_index(index_name=index_name)
-        return {"index_name": index_name, "status": "sync_triggered"}
-
-    else:
-        return {"error": f"Invalid action '{action}'. Valid actions: upsert, delete, scan, sync"}
+    return _manage_vs_data(
+        action=action,
+        index_name=index_name,
+        inputs_json=inputs_json,
+        primary_keys=primary_keys,
+        num_results=num_results,
+    )

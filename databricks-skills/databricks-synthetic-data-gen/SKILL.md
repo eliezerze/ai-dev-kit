@@ -42,7 +42,7 @@ Synthetic data should demonstrate how Databricks helps solve real business probl
 7. **Present plan for approval** — Show tables, distributions, assumptions before writing code
 8. **Master tables first** — Generate parent tables, write to Delta, then create children with valid FKs
 9. **Use Spark + Faker + Pandas UDFs** — Scalable, parallel. Polars only if user explicitly wants local + <30K rows
-10. **Use Databricks Connect Serverless by default to generate data** — Update databricks-connect on python 3.12 if required (avoid using execute_code unless instructed to not use Databricks Connect)
+10. **Use Databricks Connect Serverless by default to generate data** — Update databricks-connect on python 3.12 if required
 11. **No `.cache()` or `.persist()`** — Not supported on serverless. Write to Delta, read back for joins
 12. **No Python loops or `.collect()`** — Use Spark parallelism. No driver-side iteration, avoid Pandas↔Spark conversions
 

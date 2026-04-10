@@ -169,71 +169,6 @@ w.postgres.update_endpoint(
 ).wait()
 ```
 
-## MCP Tools
-
-The following MCP tools are available for managing Lakebase infrastructure. Use `type="autoscale"` for Lakebase Autoscaling.
-
-### manage_lakebase_database - Project Management
-
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `create_or_update` | Create or update a project | name |
-| `get` | Get project details (includes branches/endpoints) | name |
-| `list` | List all projects | (none, optional type filter) |
-| `delete` | Delete project and all branches/computes/data | name |
-
-**Example usage:**
-```python
-# Create an autoscale project
-manage_lakebase_database(
-    action="create_or_update",
-    name="my-app",
-    type="autoscale",
-    display_name="My Application",
-    pg_version="17"
-)
-
-# Get project with branches
-manage_lakebase_database(action="get", name="my-app", type="autoscale")
-
-# Delete project
-manage_lakebase_database(action="delete", name="my-app", type="autoscale")
-```
-
-### manage_lakebase_branch - Branch Management
-
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `create_or_update` | Create/update branch with compute endpoint | project_name, branch_id |
-| `delete` | Delete branch and endpoints | name (full branch name) |
-
-**Example usage:**
-```python
-# Create a dev branch with 7-day TTL
-manage_lakebase_branch(
-    action="create_or_update",
-    project_name="my-app",
-    branch_id="development",
-    source_branch="production",
-    ttl_seconds=604800,  # 7 days
-    autoscaling_limit_min_cu=0.5,
-    autoscaling_limit_max_cu=4.0,
-    scale_to_zero_seconds=300
-)
-
-# Delete branch
-manage_lakebase_branch(action="delete", name="projects/my-app/branches/development")
-```
-
-### generate_lakebase_credential - OAuth Tokens
-
-Generate OAuth token (~1hr) for PostgreSQL connections. Use as password with `sslmode=require`.
-
-```python
-# For autoscale endpoints
-generate_lakebase_credential(endpoint="projects/my-app/branches/production/endpoints/ep-primary")
-```
-
 ## Reference Files
 
 - [projects.md](projects.md) - Project management patterns and settings
@@ -242,7 +177,7 @@ generate_lakebase_credential(endpoint="projects/my-app/branches/production/endpo
 - [connection-patterns.md](connection-patterns.md) - Connection patterns for different use cases
 - [reverse-etl.md](reverse-etl.md) - Synced tables from Delta Lake to Lakebase
 
-## CLI Quick Reference
+## CLI Quick Reference (Databricks CLI)
 
 ```bash
 # Create a project
@@ -268,6 +203,25 @@ databricks postgres get-endpoint projects/my-app/branches/production/endpoints/e
 
 # Delete a project
 databricks postgres delete-project projects/my-app
+```
+
+## CLI Quick Reference (aidevkit CLI)
+
+```bash
+# Create an autoscale project (database)
+aidevkit lakebase database create-or-update --name my-app --catalog my_catalog --schema my_schema --type autoscale
+
+# Get project details
+aidevkit lakebase database get --name my-app --type autoscale
+
+# List all autoscale projects
+aidevkit lakebase database list --type autoscale
+
+# Delete project
+aidevkit lakebase database delete --name my-app --type autoscale
+
+# Generate OAuth credential
+aidevkit lakebase credential --name my-app --type autoscale
 ```
 
 ## Key Differences from Lakebase Provisioned

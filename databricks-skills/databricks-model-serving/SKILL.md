@@ -92,16 +92,11 @@ ALWAYS use exact endpoint names from this table. NEVER guess or abbreviate.
 
 ## Quick Start: Deploy a GenAI Agent
 
-### Step 1: Install Packages (in notebook or via MCP)
+### Step 1: Install Packages (in notebook)
 
 ```python
 %pip install -U mlflow==3.6.0 databricks-langchain langgraph==0.3.4 databricks-agents pydantic
 dbutils.library.restartPython()
-```
-
-Or via MCP:
-```
-execute_code(code="%pip install -U mlflow==3.6.0 databricks-langchain langgraph==0.3.4 databricks-agents pydantic")
 ```
 
 ### Step 2: Create Agent File
@@ -110,44 +105,23 @@ Create `agent.py` locally with `ResponsesAgent` pattern (see [3-genai-agents.md]
 
 ### Step 3: Upload to Workspace
 
-```
-manage_workspace_files(
-    action="upload",
-    local_path="./my_agent",
-    workspace_path="/Workspace/Users/you@company.com/my_agent"
-)
+```bash
+databricks workspace import-dir ./my_agent /Workspace/Users/you@company.com/my_agent
 ```
 
-### Step 4: Test Agent
+### Step 4: Test and Log Model
 
-```
-execute_code(
-    file_path="./my_agent/test_agent.py",
-    cluster_id="<cluster_id>"
-)
-```
+Run your test and log scripts on a cluster or via Databricks notebooks.
 
-### Step 5: Log Model
-
-```
-execute_code(
-    file_path="./my_agent/log_model.py",
-    cluster_id="<cluster_id>"
-)
-```
-
-### Step 6: Deploy (Async via Job)
+### Step 5: Deploy (Async via Job)
 
 See [7-deployment.md](7-deployment.md) for job-based deployment that doesn't timeout.
 
-### Step 7: Query Endpoint
+### Step 6: Query Endpoint
 
-```
-manage_serving_endpoint(
-    action="query",
-    name="my-agent-endpoint",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
+```bash
+aidevkit serving query --name my-agent-endpoint \
+    --messages '[{"role":"user","content":"Hello!"}]'
 ```
 
 ---
@@ -174,99 +148,29 @@ Then deploy via UI or SDK. See [1-classical-ml.md](1-classical-ml.md).
 
 ---
 
-## MCP Tools
-
-> **If MCP tools are not available**, use the SDK/CLI examples in the reference files below.
-
-### Development & Testing
-
-| Tool | Purpose |
-|------|---------|
-| `manage_workspace_files` (action="upload") | Upload agent files to workspace |
-| `execute_code` | Install packages, test agent, log model |
-
-### Deployment
-
-| Tool | Purpose |
-|------|---------|
-| `manage_jobs` (action="create") | Create deployment job (one-time) |
-| `manage_job_runs` (action="run_now") | Kick off deployment (async) |
-| `manage_job_runs` (action="get") | Check deployment job status |
-
-### manage_serving_endpoint - Querying
-
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `get` | Check endpoint status (READY/NOT_READY/NOT_FOUND) | name |
-| `list` | List all endpoints | (none, optional limit) |
-| `query` | Send requests to endpoint | name + one of: messages, inputs, dataframe_records |
-
-**Example usage:**
-```python
-# Check endpoint status
-manage_serving_endpoint(action="get", name="my-agent-endpoint")
-
-# List all endpoints
-manage_serving_endpoint(action="list")
-
-# Query a chat/agent endpoint
-manage_serving_endpoint(
-    action="query",
-    name="my-agent-endpoint",
-    messages=[{"role": "user", "content": "Hello!"}],
-    max_tokens=500
-)
-
-# Query a traditional ML endpoint
-manage_serving_endpoint(
-    action="query",
-    name="sklearn-classifier",
-    dataframe_records=[{"age": 25, "income": 50000, "credit_score": 720}]
-)
-```
-
----
-
 ## Common Workflows
 
 ### Check Endpoint Status After Deployment
 
-```
-manage_serving_endpoint(action="get", name="my-agent-endpoint")
+```bash
+aidevkit serving get --name my-agent-endpoint
 ```
 
-Returns:
-```json
-{
-    "name": "my-agent-endpoint",
-    "state": "READY",
-    "served_entities": [...]
-}
-```
+Returns endpoint details including state (READY/NOT_READY).
 
 ### Query a Chat/Agent Endpoint
 
-```
-manage_serving_endpoint(
-    action="query",
-    name="my-agent-endpoint",
-    messages=[
-        {"role": "user", "content": "What is Databricks?"}
-    ],
-    max_tokens=500
-)
+```bash
+aidevkit serving query --name my-agent-endpoint \
+    --messages '[{"role":"user","content":"What is Databricks?"}]' \
+    --max-tokens 500
 ```
 
 ### Query a Traditional ML Endpoint
 
-```
-manage_serving_endpoint(
-    action="query",
-    name="sklearn-classifier",
-    dataframe_records=[
-        {"age": 25, "income": 50000, "credit_score": 720}
-    ]
-)
+```bash
+aidevkit serving query --name sklearn-classifier \
+    --dataframe-records '[{"age":25,"income":50000,"credit_score":720}]'
 ```
 
 ---
@@ -310,6 +214,35 @@ Available helper methods:
 - **[databricks-genie](../databricks-genie/SKILL.md)** - Genie Spaces can serve as agents in multi-agent setups
 - **[databricks-mlflow-evaluation](../databricks-mlflow-evaluation/SKILL.md)** - Evaluate model and agent quality before deployment
 - **[databricks-jobs](../databricks-jobs/SKILL.md)** - Job-based async deployment used for agent endpoints
+
+---
+
+## CLI Quick Reference
+
+```bash
+# List all serving endpoints
+aidevkit serving list
+
+# Get endpoint status
+aidevkit serving get --name my-agent-endpoint
+
+# Query a chat/agent endpoint
+aidevkit serving query --name my-agent-endpoint \
+    --messages '[{"role":"user","content":"Hello!"}]' --max-tokens 500
+
+# Query with dataframe records (traditional ML)
+aidevkit serving query --name sklearn-classifier \
+    --dataframe-records '[{"age":25,"income":50000}]'
+
+# Create or update endpoint
+aidevkit serving create-or-update --name my-endpoint \
+    --model-name catalog.schema.my_model --model-version 1
+
+# Delete endpoint
+aidevkit serving delete --name my-endpoint
+```
+
+---
 
 ## Resources
 

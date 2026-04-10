@@ -95,74 +95,6 @@ ORDER BY ALL
 | YAML Syntax | [yaml-reference.md](yaml-reference.md) | Complete YAML spec: dimensions, measures, joins, materialization |
 | Patterns & Examples | [patterns.md](patterns.md) | Common patterns: star schema, snowflake, filtered measures, window measures, ratios |
 
-## MCP Tools
-
-Use the `manage_metric_views` tool for all metric view operations:
-
-| Action | Description |
-|--------|-------------|
-| `create` | Create a metric view with dimensions and measures |
-| `alter` | Update a metric view's YAML definition |
-| `describe` | Get the full definition and metadata |
-| `query` | Query measures grouped by dimensions |
-| `drop` | Drop a metric view |
-| `grant` | Grant SELECT privileges to users/groups |
-
-### Create via MCP
-
-```python
-manage_metric_views(
-    action="create",
-    full_name="catalog.schema.orders_metrics",
-    source="catalog.schema.orders",
-    or_replace=True,
-    comment="Orders KPIs for sales analysis",
-    filter_expr="order_date > '2020-01-01'",
-    dimensions=[
-        {"name": "Order Month", "expr": "DATE_TRUNC('MONTH', order_date)", "comment": "Month of order"},
-        {"name": "Order Status", "expr": "status"},
-    ],
-    measures=[
-        {"name": "Order Count", "expr": "COUNT(1)"},
-        {"name": "Total Revenue", "expr": "SUM(total_price)", "comment": "Sum of total price"},
-    ],
-)
-```
-
-### Query via MCP
-
-```python
-manage_metric_views(
-    action="query",
-    full_name="catalog.schema.orders_metrics",
-    query_measures=["Total Revenue", "Order Count"],
-    query_dimensions=["Order Month"],
-    where="extract(year FROM `Order Month`) = 2024",
-    order_by="ALL",
-    limit=100,
-)
-```
-
-### Describe via MCP
-
-```python
-manage_metric_views(
-    action="describe",
-    full_name="catalog.schema.orders_metrics",
-)
-```
-
-### Grant Access
-
-```python
-manage_metric_views(
-    action="grant",
-    full_name="catalog.schema.orders_metrics",
-    principal="data-consumers",
-    privileges=["SELECT"],
-)
-```
-
 ## YAML Spec Quick Reference
 
 ```yaml
@@ -231,6 +163,45 @@ Metric views work natively with:
 - **Alerts** - Set threshold-based alerts on measures
 - **SQL Editor** - Direct SQL querying with MEASURE()
 - **Catalog Explorer UI** - Visual creation and browsing
+
+---
+
+## CLI Quick Reference (aidevkit CLI)
+
+```bash
+# Create a metric view
+aidevkit uc metric-views create --name catalog.schema.orders_metrics \
+    --source catalog.schema.orders \
+    --dimensions '[{"name":"Order Month","expr":"DATE_TRUNC(MONTH, order_date)"},{"name":"Order Status","expr":"status"}]' \
+    --measures '[{"name":"Order Count","expr":"COUNT(1)"},{"name":"Total Revenue","expr":"SUM(total_price)"}]' \
+    --comment "Orders KPIs for sales analysis" \
+    --filter "order_date > '2020-01-01'" \
+    --or-replace
+
+# Describe a metric view
+aidevkit uc metric-views describe --name catalog.schema.orders_metrics
+
+# Query a metric view
+aidevkit uc metric-views query --name catalog.schema.orders_metrics \
+    --measures "Total Revenue,Order Count" \
+    --dimensions "Order Month" \
+    --where "extract(year FROM \`Order Month\`) = 2024" \
+    --limit 100
+
+# Alter a metric view (add new measure)
+aidevkit uc metric-views alter --name catalog.schema.orders_metrics \
+    --measures '[{"name":"Order Count","expr":"COUNT(1)"},{"name":"Total Revenue","expr":"SUM(total_price)"},{"name":"Avg Order Value","expr":"AVG(total_price)"}]'
+
+# Grant SELECT access
+aidevkit uc metric-views grant --name catalog.schema.orders_metrics \
+    --principal data-consumers \
+    --privileges SELECT
+
+# Drop a metric view
+aidevkit uc metric-views drop --name catalog.schema.orders_metrics
+```
+
+---
 
 ## Resources
 

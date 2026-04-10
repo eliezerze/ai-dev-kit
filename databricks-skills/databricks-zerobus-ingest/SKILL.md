@@ -218,6 +218,23 @@ The timestamp generation must use microseconds for Databricks.
 
 ---
 
+## CLI Quick Reference (aidevkit CLI)
+
+For executing Zerobus code on Databricks compute:
+
+```bash
+# Execute Python code on serverless (for SDK or REST API patterns)
+aidevkit compute execute --code "from databricks.sdk.service.catalog import..." --language python
+
+# Execute from a Python file
+aidevkit compute execute --file ./zerobus_producer.py
+
+# Execute on a specific cluster (required for Zerobus SDK)
+aidevkit compute execute --file ./zerobus_producer.py --compute cluster --cluster-id abc123
+```
+
+---
+
 ## Related Skills
 
 - **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** - General SDK patterns and WorkspaceClient for table/schema management

@@ -109,6 +109,123 @@ from ..server import mcp
 logger = logging.getLogger(__name__)
 
 
+# CLI_MAPPING for skill transformation
+CLI_MAPPING = {
+    "manage_uc_objects": {
+        "catalog": {
+            "create": "aidevkit uc catalog create",
+            "get": "aidevkit uc catalog get",
+            "list": "aidevkit uc catalog list",
+            "update": "aidevkit uc catalog update",
+            "delete": "aidevkit uc catalog delete",
+        },
+        "schema": {
+            "create": "aidevkit uc schema create",
+            "get": "aidevkit uc schema get",
+            "list": "aidevkit uc schema list",
+            "update": "aidevkit uc schema update",
+            "delete": "aidevkit uc schema delete",
+        },
+        "volume": {
+            "create": "aidevkit uc volume create",
+            "get": "aidevkit uc volume get",
+            "list": "aidevkit uc volume list",
+            "update": "aidevkit uc volume update",
+            "delete": "aidevkit uc volume delete",
+        },
+        "function": {
+            "get": "aidevkit uc function get",
+            "list": "aidevkit uc function list",
+            "delete": "aidevkit uc function delete",
+        },
+    },
+    "manage_uc_grants": {
+        "grant": "aidevkit uc grants grant",
+        "revoke": "aidevkit uc grants revoke",
+        "get": "aidevkit uc grants get",
+        "get_effective": "aidevkit uc grants get-effective",
+    },
+    "manage_uc_storage": {
+        "credential": {
+            "create": "aidevkit uc storage credential create",
+            "get": "aidevkit uc storage credential get",
+            "list": "aidevkit uc storage credential list",
+            "update": "aidevkit uc storage credential update",
+            "delete": "aidevkit uc storage credential delete",
+            "validate": "aidevkit uc storage credential validate",
+        },
+        "external_location": {
+            "create": "aidevkit uc storage location create",
+            "get": "aidevkit uc storage location get",
+            "list": "aidevkit uc storage location list",
+            "update": "aidevkit uc storage location update",
+            "delete": "aidevkit uc storage location delete",
+        },
+    },
+    "manage_uc_connections": {
+        "create": "aidevkit uc connections create",
+        "get": "aidevkit uc connections get",
+        "list": "aidevkit uc connections list",
+        "update": "aidevkit uc connections update",
+        "delete": "aidevkit uc connections delete",
+        "create_foreign_catalog": "aidevkit uc connections create-foreign-catalog",
+    },
+    "manage_uc_tags": {
+        "set_tags": "aidevkit uc tags set",
+        "unset_tags": "aidevkit uc tags unset",
+        "set_comment": "aidevkit uc tags set-comment",
+        "query_table_tags": "aidevkit uc tags query-tables",
+        "query_column_tags": "aidevkit uc tags query-columns",
+    },
+    "manage_uc_security_policies": {
+        "set_row_filter": "aidevkit uc security set-row-filter",
+        "drop_row_filter": "aidevkit uc security drop-row-filter",
+        "set_column_mask": "aidevkit uc security set-column-mask",
+        "drop_column_mask": "aidevkit uc security drop-column-mask",
+        "create_security_function": "aidevkit uc security create-function",
+    },
+    "manage_uc_monitors": {
+        "create": "aidevkit uc monitors create",
+        "get": "aidevkit uc monitors get",
+        "run_refresh": "aidevkit uc monitors refresh",
+        "list_refreshes": "aidevkit uc monitors list-refreshes",
+        "delete": "aidevkit uc monitors delete",
+    },
+    "manage_uc_sharing": {
+        "share": {
+            "create": "aidevkit uc sharing share create",
+            "get": "aidevkit uc sharing share get",
+            "list": "aidevkit uc sharing share list",
+            "delete": "aidevkit uc sharing share delete",
+            "add_table": "aidevkit uc sharing share add-table",
+            "remove_table": "aidevkit uc sharing share remove-table",
+            "grant_to_recipient": "aidevkit uc sharing share grant",
+            "revoke_from_recipient": "aidevkit uc sharing share revoke",
+        },
+        "recipient": {
+            "create": "aidevkit uc sharing recipient create",
+            "get": "aidevkit uc sharing recipient get",
+            "list": "aidevkit uc sharing recipient list",
+            "delete": "aidevkit uc sharing recipient delete",
+            "rotate_token": "aidevkit uc sharing recipient rotate-token",
+        },
+        "provider": {
+            "get": "aidevkit uc sharing provider get",
+            "list": "aidevkit uc sharing provider list",
+            "list_shares": "aidevkit uc sharing provider list-shares",
+        },
+    },
+    "manage_metric_views": {
+        "create": "aidevkit uc metric-views create",
+        "alter": "aidevkit uc metric-views alter",
+        "describe": "aidevkit uc metric-views describe",
+        "query": "aidevkit uc metric-views query",
+        "drop": "aidevkit uc metric-views drop",
+        "grant": "aidevkit uc metric-views grant",
+    },
+}
+
+
 def _delete_catalog_resource(resource_id: str) -> None:
     _delete_catalog(catalog_name=resource_id, force=True)
 

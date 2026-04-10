@@ -3,14 +3,14 @@
 Consolidated into 1 tool:
 - manage_app: create_or_update, get, list, delete
 
-This module is a thin wrapper around databricks_tools_core.apps.workflows.
+This module is a thin wrapper around databricks_tools_core.apps.apps_api.
 All business logic lives in the workflows module.
 """
 
 from typing import Any, Dict, Optional
 
 from databricks_tools_core.apps.apps import delete_app as _delete_app
-from databricks_tools_core.apps.workflows import (
+from databricks_tools_core.apps.apps_api import (
     manage_app as _manage_app,
     set_resource_tracking,
 )

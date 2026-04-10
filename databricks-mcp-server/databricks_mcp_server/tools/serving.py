@@ -3,13 +3,13 @@
 Consolidated into 1 tool:
 - manage_serving_endpoint: get, list, query
 
-This module is a thin wrapper around databricks_tools_core.serving.workflows.
+This module is a thin wrapper around databricks_tools_core.serving.serving_api.
 All business logic lives in the workflows module.
 """
 
 from typing import Any, Dict, List, Optional
 
-from databricks_tools_core.serving.workflows import manage_serving_endpoint as _manage_serving_endpoint
+from databricks_tools_core.serving.serving_api import manage_serving_endpoint as _manage_serving_endpoint
 
 from ..server import mcp
 

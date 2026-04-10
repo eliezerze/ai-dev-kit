@@ -249,7 +249,7 @@ w.jobs.cancel_run(run_id=run.run_id)
 w.jobs.delete(job_id=12345)
 ```
 
-### CLI Operations
+### CLI Operations (Databricks CLI)
 
 ```bash
 # List jobs
@@ -269,6 +269,46 @@ databricks jobs cancel-run 67890
 
 # Delete job
 databricks jobs delete 12345
+```
+
+### CLI Operations (aidevkit CLI)
+
+```bash
+# List jobs
+aidevkit jobs list
+
+# Get job by ID
+aidevkit jobs get --job-id 12345
+
+# Find job by name
+aidevkit jobs find-by-name --name "my-etl-job"
+
+# Create a job
+aidevkit jobs create --name "my-job" --tasks '[{"task_key":"t1","notebook_task":{"notebook_path":"/path"}}]'
+
+# Run job now
+aidevkit jobs run --job-id 12345
+
+# Run with parameters
+aidevkit jobs run --job-id 12345 --parameters '{"env": "prod"}'
+
+# Get run status
+aidevkit jobs run-get --run-id 67890
+
+# Wait for run completion
+aidevkit jobs run-wait --run-id 67890 --timeout 3600
+
+# Get run output
+aidevkit jobs run-output --run-id 67890
+
+# Cancel a run
+aidevkit jobs run-cancel --run-id 67890
+
+# List runs for a job
+aidevkit jobs runs-list --job-id 12345
+
+# Delete job
+aidevkit jobs delete --job-id 12345
 ```
 
 ### Asset Bundle Operations

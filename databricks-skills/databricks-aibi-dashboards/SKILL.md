@@ -13,61 +13,22 @@ Create Databricks AI/BI dashboards (formerly Lakeview dashboards). **Follow thes
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 1: Get table schemas via get_table_stats_and_schema(catalog, schema)  │
+│  STEP 1: Get table schemas via aidevkit sql query                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │  STEP 2: Write SQL queries for each dataset                        │
 ├─────────────────────────────────────────────────────────────────────┤
-│  STEP 3: TEST EVERY QUERY via execute_sql() ← DO NOT SKIP!         │
+│  STEP 3: TEST EVERY QUERY via aidevkit sql query ← DO NOT SKIP!    │
 │          - If query fails, FIX IT before proceeding                │
 │          - Verify column names match what widgets will reference   │
 │          - Verify data types are correct (dates, numbers, strings) │
 ├─────────────────────────────────────────────────────────────────────┤
 │  STEP 4: Build dashboard JSON using ONLY verified queries          │
 ├─────────────────────────────────────────────────────────────────────┤
-│  STEP 5: Deploy via manage_dashboard(action="create_or_update")    │
+│  STEP 5: Deploy via aidevkit dashboards create-or-update           │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 **WARNING: If you deploy without testing queries, widgets WILL show "Invalid widget definition" errors!**
-
-## Available MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `get_table_stats_and_schema` | **STEP 1**: Get table schemas for designing queries |
-| `execute_sql` | **STEP 3**: Test SQL queries - MANDATORY before deployment! |
-| `manage_warehouse` (action="get_best") | Get available warehouse ID |
-| `manage_dashboard` | **STEP 5**: Dashboard lifecycle management (see actions below) |
-
-### manage_dashboard Actions
-
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `create_or_update` | Deploy dashboard JSON (only after validation!) | display_name, parent_path, serialized_dashboard, warehouse_id |
-| `get` | Get dashboard details by ID | dashboard_id |
-| `list` | List all dashboards | (none) |
-| `delete` | Move dashboard to trash | dashboard_id |
-| `publish` | Publish a dashboard | dashboard_id, warehouse_id |
-| `unpublish` | Unpublish a dashboard | dashboard_id |
-
-**Example usage:**
-```python
-# Create/update dashboard
-manage_dashboard(
-    action="create_or_update",
-    display_name="Sales Dashboard",
-    parent_path="/Workspace/Users/me/dashboards",
-    serialized_dashboard=dashboard_json,
-    warehouse_id="abc123",
-    publish=True  # auto-publish after create
-)
-
-# Get dashboard details
-manage_dashboard(action="get", dashboard_id="dashboard_123")
-
-# List all dashboards
-manage_dashboard(action="list")
-```
 
 ## Reference Files
 
@@ -186,7 +147,7 @@ y=12: Table (w=6, h=6) - Detailed data
 | High cardinality | **Table only** | customer_id, order_id, SKU |
 
 **Before creating any chart with color/grouping:**
-1. Check column cardinality (use `get_table_stats_and_schema` to see distinct values)
+1. Check column cardinality (use `aidevkit sql query` to check distinct values)
 2. If >10 distinct values, aggregate to higher level OR use TOP-N + "Other" bucket
 3. For high-cardinality dimensions, use a table widget instead of a chart
 
@@ -202,7 +163,36 @@ Before deploying, verify:
 7. Counter datasets: use `disaggregated: true` for 1-row datasets, `disaggregated: false` with aggregation for multi-row
 8. Percent values are 0-1 (not 0-100)
 9. SQL uses Spark syntax (date_sub, not INTERVAL)
-10. **All SQL queries tested via `execute_sql` and return expected data**
+10. **All SQL queries tested via `aidevkit sql query` and return expected data**
+
+---
+
+---
+
+## CLI Quick Reference
+
+```bash
+# Create or update a dashboard
+aidevkit dashboards create-or-update --name "Sales Dashboard" \
+    --parent-path "/Workspace/Users/me/dashboards" \
+    --dashboard-json '{"pages":[...]}' \
+    --warehouse-id abc123
+
+# Get dashboard details
+aidevkit dashboards get --dashboard-id dashboard_123
+
+# List all dashboards
+aidevkit dashboards list
+
+# Delete a dashboard
+aidevkit dashboards delete --dashboard-id dashboard_123
+
+# Publish a dashboard
+aidevkit dashboards publish --dashboard-id dashboard_123 --warehouse-id abc123
+
+# Unpublish a dashboard
+aidevkit dashboards unpublish --dashboard-id dashboard_123
+```
 
 ---
 

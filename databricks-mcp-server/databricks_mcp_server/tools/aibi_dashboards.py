@@ -3,24 +3,32 @@
 Note: AI/BI dashboards were previously known as Lakeview dashboards.
 The SDK/API still uses the 'lakeview' name internally.
 
-Consolidated into 1 tool:
-- manage_dashboard: create_or_update, get, list, delete, publish, unpublish
+This is a thin MCP wrapper around databricks_tools_core.aibi_dashboards.aibi_dashboards_api.
+All business logic is in the core module.
 """
 
-import json
 from typing import Any, Dict, Optional, Union
 
-from databricks_tools_core.aibi_dashboards import (
-    create_or_update_dashboard as _create_or_update_dashboard,
-    get_dashboard as _get_dashboard,
-    list_dashboards as _list_dashboards,
-    publish_dashboard as _publish_dashboard,
-    trash_dashboard as _trash_dashboard,
-    unpublish_dashboard as _unpublish_dashboard,
+from databricks_tools_core.aibi_dashboards.aibi_dashboards_api import (
+    manage_dashboard as _manage_dashboard,
 )
+from databricks_tools_core.aibi_dashboards import trash_dashboard as _trash_dashboard
 
-from ..manifest import register_deleter
+from ..manifest import register_deleter, track_resource, remove_resource
 from ..server import mcp
+
+
+# CLI_MAPPING for skill transformation
+CLI_MAPPING = {
+    "manage_dashboard": {
+        "create_or_update": "aidevkit dashboards create-or-update",
+        "get": "aidevkit dashboards get",
+        "list": "aidevkit dashboards list",
+        "delete": "aidevkit dashboards delete",
+        "publish": "aidevkit dashboards publish",
+        "unpublish": "aidevkit dashboards unpublish",
+    },
+}
 
 
 def _delete_dashboard_resource(resource_id: str) -> None:
@@ -28,6 +36,16 @@ def _delete_dashboard_resource(resource_id: str) -> None:
 
 
 register_deleter("dashboard", _delete_dashboard_resource)
+
+
+def _on_dashboard_created(resource_type: str, name: str, resource_id: str, url: Optional[str] = None) -> None:
+    """Callback to track dashboard in MCP manifest."""
+    track_resource(
+        resource_type=resource_type,
+        name=name,
+        resource_id=resource_id,
+        url=url,
+    )
 
 
 @mcp.tool(timeout=120)
@@ -79,76 +97,27 @@ def manage_dashboard(
     - Layout: 6-column grid
     - Filter types: filter-multi-select, filter-single-select, filter-date-range-picker
     - Text widget uses textbox_spec (no spec block)"""
-    act = action.lower()
-
-    if act == "create_or_update":
-        if not all([display_name, parent_path, serialized_dashboard, warehouse_id]):
-            return {"error": "create_or_update requires: display_name, parent_path, serialized_dashboard, warehouse_id"}
-
-        # MCP deserializes JSON params, so serialized_dashboard may arrive as a dict
-        if isinstance(serialized_dashboard, dict):
-            serialized_dashboard = json.dumps(serialized_dashboard)
-
-        result = _create_or_update_dashboard(
-            display_name=display_name,
-            parent_path=parent_path,
-            serialized_dashboard=serialized_dashboard,
-            warehouse_id=warehouse_id,
-            publish=publish,
+    # Handle delete specially to also remove from manifest
+    if action.lower() == "delete" and dashboard_id:
+        result = _manage_dashboard(
+            action=action,
+            dashboard_id=dashboard_id,
         )
-
-        # Track resource on successful create/update
         try:
-            if result.get("success") and result.get("dashboard_id"):
-                from ..manifest import track_resource
-
-                track_resource(
-                    resource_type="dashboard",
-                    name=display_name,
-                    resource_id=result["dashboard_id"],
-                    url=result.get("url"),
-                )
-        except Exception:
-            pass
-
-        return result
-
-    elif act == "get":
-        if not dashboard_id:
-            return {"error": "get requires: dashboard_id"}
-        return _get_dashboard(dashboard_id=dashboard_id)
-
-    elif act == "list":
-        return _list_dashboards(page_size=200)
-
-    elif act == "delete":
-        if not dashboard_id:
-            return {"error": "delete requires: dashboard_id"}
-        result = _trash_dashboard(dashboard_id=dashboard_id)
-        try:
-            from ..manifest import remove_resource
             remove_resource(resource_type="dashboard", resource_id=dashboard_id)
         except Exception:
             pass
         return result
 
-    elif act == "publish":
-        if not dashboard_id:
-            return {"error": "publish requires: dashboard_id"}
-        if not warehouse_id:
-            return {"error": "publish requires: warehouse_id"}
-        return _publish_dashboard(
-            dashboard_id=dashboard_id,
-            warehouse_id=warehouse_id,
-            embed_credentials=embed_credentials,
-        )
-
-    elif act == "unpublish":
-        if not dashboard_id:
-            return {"error": "unpublish requires: dashboard_id"}
-        return _unpublish_dashboard(dashboard_id=dashboard_id)
-
-    else:
-        return {
-            "error": f"Invalid action '{action}'. Valid actions: create_or_update, get, list, delete, publish, unpublish"
-        }
+    # For all other actions, delegate to core API
+    return _manage_dashboard(
+        action=action,
+        display_name=display_name,
+        parent_path=parent_path,
+        serialized_dashboard=serialized_dashboard,
+        warehouse_id=warehouse_id,
+        publish=publish,
+        dashboard_id=dashboard_id,
+        embed_credentials=embed_credentials,
+        on_resource_created=_on_dashboard_created,
+    )

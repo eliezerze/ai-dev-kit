@@ -29,15 +29,21 @@ Use this skill when:
 
 ## Quick Start
 
-### Volume File Operations (MCP Tools)
+### Volume File Operations (CLI)
 
-| Tool | Usage |
-|------|-------|
-| `list_volume_files` | `list_volume_files(volume_path="/Volumes/catalog/schema/volume/path/")` |
-| `get_volume_folder_details` | `get_volume_folder_details(volume_path="catalog/schema/volume/path", format="parquet")` - schema, row counts, stats |
-| `upload_to_volume` | `upload_to_volume(local_path="/tmp/data/*", volume_path="/Volumes/.../dest")` |
-| `download_from_volume` | `download_from_volume(volume_path="/Volumes/.../file.csv", local_path="/tmp/file.csv")` |
-| `create_volume_directory` | `create_volume_directory(volume_path="/Volumes/.../new_folder")` |
+```bash
+# List files in a volume
+aidevkit volume-files list --path /Volumes/catalog/schema/volume/path/
+
+# Upload files to volume
+aidevkit volume-files upload --local /tmp/data.csv --volume /Volumes/catalog/schema/volume/
+
+# Download from volume
+aidevkit volume-files download --volume /Volumes/catalog/schema/volume/file.csv --local /tmp/file.csv
+
+# Create directory in volume
+aidevkit volume-files mkdir --path /Volumes/catalog/schema/volume/new_folder
+```
 
 ### Enable System Tables Access
 
@@ -71,28 +77,66 @@ WHERE usage_date >= current_date() - 30
 GROUP BY workspace_id, sku_name;
 ```
 
-## MCP Tool Integration
-
-Use `mcp__databricks__execute_sql` for system table queries:
-
-```python
-# Query lineage
-mcp__databricks__execute_sql(
-    sql_query="""
-        SELECT source_table_full_name, target_table_full_name
-        FROM system.access.table_lineage
-        WHERE event_date >= current_date() - 7
-    """,
-    catalog="system"
-)
-```
-
 ## Best Practices
 
 1. **Filter by date** - System tables can be large; always use date filters
 2. **Use appropriate retention** - Check your workspace's retention settings
 3. **Grant minimal access** - System tables contain sensitive metadata
 4. **Schedule reports** - Create scheduled queries for regular monitoring
+
+---
+
+## CLI Quick Reference (aidevkit CLI)
+
+### Catalogs
+```bash
+aidevkit uc catalog create --name my_catalog
+aidevkit uc catalog get --name my_catalog
+aidevkit uc catalog list
+aidevkit uc catalog delete --name my_catalog
+```
+
+### Schemas
+```bash
+aidevkit uc schema create --catalog my_catalog --name my_schema
+aidevkit uc schema get --catalog my_catalog --name my_schema
+aidevkit uc schema list --catalog my_catalog
+aidevkit uc schema delete --catalog my_catalog --name my_schema
+```
+
+### Volumes
+```bash
+aidevkit uc volume create --catalog my_catalog --schema my_schema --name my_volume --type MANAGED
+aidevkit uc volume get --volume my_catalog.my_schema.my_volume
+aidevkit uc volume list --catalog my_catalog --schema my_schema
+aidevkit uc volume delete --volume my_catalog.my_schema.my_volume
+```
+
+### Volume Files
+```bash
+aidevkit volume-files list --path /Volumes/catalog/schema/volume/folder/
+aidevkit volume-files upload --local /tmp/data.csv --volume /Volumes/catalog/schema/volume/
+aidevkit volume-files download --volume /Volumes/catalog/schema/volume/file.csv --local /tmp/file.csv
+aidevkit volume-files delete --path /Volumes/catalog/schema/volume/file.csv
+aidevkit volume-files mkdir --path /Volumes/catalog/schema/volume/new_folder
+aidevkit volume-files info --path /Volumes/catalog/schema/volume/file.csv
+```
+
+### Grants
+```bash
+aidevkit uc grants grant --securable catalog.my_catalog --principal user@example.com --privilege USE_CATALOG
+aidevkit uc grants get --securable catalog.my_catalog --principal user@example.com
+aidevkit uc grants revoke --securable catalog.my_catalog --principal user@example.com --privilege USE_CATALOG
+```
+
+### Functions
+```bash
+aidevkit uc function list --catalog my_catalog --schema my_schema
+aidevkit uc function get --function my_catalog.my_schema.my_function
+aidevkit uc function delete --function my_catalog.my_schema.my_function
+```
+
+---
 
 ## Related Skills
 

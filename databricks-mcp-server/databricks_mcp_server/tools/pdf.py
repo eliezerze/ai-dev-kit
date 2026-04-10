@@ -1,12 +1,12 @@
 """PDF tools - Convert HTML to PDF and upload to Unity Catalog volumes.
 
-This module is a thin wrapper around databricks_tools_core.pdf.workflows.
+This module is a thin wrapper around databricks_tools_core.pdf.pdf_api.
 All business logic lives in the workflows module.
 """
 
 from typing import Any, Dict, Optional
 
-from databricks_tools_core.pdf.workflows import generate_and_upload_pdf as _generate_and_upload_pdf
+from databricks_tools_core.pdf.pdf_api import generate_and_upload_pdf as _generate_and_upload_pdf
 
 from ..server import mcp
 

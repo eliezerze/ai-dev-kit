@@ -148,7 +148,7 @@ def get_app_logs(
         if app.active_deployment:
             deployment_id = app.active_deployment.deployment_id
         else:
-            return {"app_name": app_name, "error": "No active deployment found"}
+            raise ValueError(f"App '{app_name}' has no active deployment.")
 
     # Use the REST client to fetch logs since SDK may not have direct method
     from ..client import get_api_client

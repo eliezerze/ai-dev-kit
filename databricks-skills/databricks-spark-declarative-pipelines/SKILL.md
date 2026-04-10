@@ -83,15 +83,14 @@ Use this when the pipeline is **part of an existing DAB project**:
 
 → See [1-project-initialization.md](references/1-project-initialization.md) for adding pipelines to existing bundles
 
-### Option C: Rapid Iteration with MCP Tools (no bundle management)
+### Option C: Rapid Iteration with CLI (no bundle management)
 
 Use this when you need to **quickly create, test, and iterate** on a pipeline without managing bundle files:
 - User wants to "just run a pipeline and see if it works"
 - Part of a larger demo where bundle is managed separately, or the DAB bundle will be created at the end as you want to quickly test the project first
 - Prototyping or experimenting with pipeline logic
-- User explicitly asks to use MCP tools
 
-→ See [2-mcp-approach.md](references/2-mcp-approach.md) for MCP-based workflow
+→ See [2-cli-approach.md](references/2-cli-approach.md) for CLI-based workflow
 
 ---
 
@@ -179,7 +178,7 @@ After choosing your workflow (see [Choose Your Workflow](#choose-your-workflow))
 | Task | Guide |
 |------|-------|
 | **Setting up standalone pipeline project** | [1-project-initialization.md](references/1-project-initialization.md) |
-| **Rapid iteration with MCP tools** | [2-mcp-approach.md](references/2-mcp-approach.md) |
+| **Rapid iteration with CLI** | [2-cli-approach.md](references/2-cli-approach.md) |
 | **Advanced configuration** | [3-advanced-configuration.md](references/3-advanced-configuration.md) |
 | **Migrating from DLT** | [4-dlt-migration.md](references/4-dlt-migration.md) |
 
@@ -278,29 +277,25 @@ For detailed examples, see **[3-advanced-configuration.md](references/3-advanced
 
 ## Post-Run Validation (Required)
 
-After running a pipeline (via DAB or MCP), you **MUST** validate both the execution status AND the actual data.
+After running a pipeline (via DAB or CLI), you **MUST** validate both the execution status AND the actual data.
 
 ### Step 1: Check Pipeline Execution Status
 
-**From MCP (`manage_pipeline(action="run")` or `manage_pipeline(action="create_or_update")`):**
-- Check `result["success"]` and `result["state"]`
-- If failed, check `result["message"]` and `result["errors"]` for details
+**From CLI (`aidevkit pipelines run-start`):**
+- Use `aidevkit pipelines run-get --pipeline-id <id>` to check status
+- If failed, check the events with `aidevkit pipelines run-events --pipeline-id <id>`
 
 **From DAB (`databricks bundle run`):**
 - Check the command output for success/failure
-- Use `manage_pipeline(action="get", pipeline_id=...)` to get detailed status and recent events
+- Use `aidevkit pipelines get --pipeline-id <id>` to get detailed status
 
 ### Step 2: Validate Output Data
 
 Even if the pipeline reports SUCCESS, you **MUST** verify the data is correct:
 
-```
-# MCP Tool: get_table_stats_and_schema - validates schema, row counts, and stats
-get_table_stats_and_schema(
-    catalog="my_catalog",
-    schema="my_schema",
-    table_names=["bronze_*", "silver_*", "gold_*"]  # Use glob patterns
-)
+```bash
+# CLI: validates schema, row counts, and stats
+aidevkit sql table-stats --catalog my_catalog --schema my_schema --level DETAILED
 ```
 
 **Check for:**
@@ -314,7 +309,7 @@ get_table_stats_and_schema(
 If validation reveals problems, trace upstream to find the root cause:
 
 1. **Start from the problematic table** - identify what's wrong (empty, wrong counts, bad data)
-2. **Check its source table** - use `get_table_stats_and_schema` on the upstream table
+2. **Check its source table** - use `aidevkit sql table-stats` on the upstream table
 3. **Trace back to bronze** - continue until you find where the issue originates
 4. **Common causes:**
    - Bronze empty → source files missing or path incorrect
@@ -323,8 +318,6 @@ If validation reveals problems, trace upstream to find the root cause:
    - Data mismatch → type casting issues or NULL handling
 
 5. **Fix the SQL/Python code**, re-upload, and re-run the pipeline
-
-**Do NOT use `execute_sql` with COUNT queries for validation** - `get_table_stats_and_schema` is faster and returns more information in a single call.
 
 ---
 
@@ -342,7 +335,7 @@ If validation reveals problems, trace upstream to find the root cause:
 | **AUTO CDC parse error at APPLY/SEQUENCE** | Put `APPLY AS DELETE WHEN` **before** `SEQUENCE BY`. Only list columns in `COLUMNS * EXCEPT (...)` that exist in the source (omit `_rescued_data` unless bronze uses rescue data). Omit `TRACK HISTORY ON *` if it causes "end of input" errors; default is equivalent. See [sql/4-cdc-patterns.md](references/sql/4-cdc-patterns.md). |
 | **"Cannot create streaming table from batch query"** | In a streaming table query, use `FROM STREAM read_files(...)` so `read_files` leverages Auto Loader; `FROM read_files(...)` alone is batch. See [sql/2-ingestion.md](references/sql/2-ingestion.md) and [read_files — Usage in streaming tables](https://docs.databricks.com/aws/en/sql/language-manual/functions/read_files#usage-in-streaming-tables). |
 
-**For detailed errors**, the `result["message"]` from `manage_pipeline(action="create_or_update")` includes suggested next steps. Use `manage_pipeline(action="get", pipeline_id=...)` which includes recent events and error details.
+**For detailed errors**, use `aidevkit pipelines get --pipeline-id <id>` which includes recent events and error details, or `aidevkit pipelines run-events --pipeline-id <id>` for full event logs.
 
 ---
 
@@ -380,6 +373,50 @@ For advanced configuration options (development mode, continuous pipelines, cust
 | **Sinks** | Python only, streaming only, append flows only |
 
 **Default to serverless** unless user explicitly requires R, RDD APIs, or JAR libraries.
+
+---
+
+## CLI Quick Reference (aidevkit CLI)
+
+```bash
+# Create a pipeline
+aidevkit pipelines create --name "my-etl-pipeline" \
+    --libraries '[{"notebook":{"path":"/Workspace/Users/me/pipeline"}}]' \
+    --target my_schema --catalog my_catalog
+
+# Create or update pipeline (idempotent)
+aidevkit pipelines create-or-update --name "my-etl-pipeline" \
+    --libraries '[{"notebook":{"path":"/Workspace/Users/me/pipeline"}}]'
+
+# Get pipeline details
+aidevkit pipelines get --pipeline-id abc123
+
+# Find pipeline by name
+aidevkit pipelines find-by-name --name "my-etl-pipeline"
+
+# List all pipelines
+aidevkit pipelines list
+
+# Start pipeline run
+aidevkit pipelines run-start --pipeline-id abc123
+
+# Start with full refresh
+aidevkit pipelines run-start --pipeline-id abc123 --full-refresh
+
+# Get run status
+aidevkit pipelines run-get --pipeline-id abc123
+
+# Stop pipeline
+aidevkit pipelines run-stop --pipeline-id abc123
+
+# Get pipeline events/logs
+aidevkit pipelines run-events --pipeline-id abc123 --max 100
+
+# Delete pipeline
+aidevkit pipelines delete --pipeline-id abc123
+```
+
+---
 
 ## Related Skills
 

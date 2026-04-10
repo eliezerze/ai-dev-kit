@@ -63,6 +63,12 @@ from .runs import (
     wait_for_run,
 )
 
+# High-level API (used by MCP and CLI)
+from .jobs_api import (
+    manage_jobs as api_manage_jobs,
+    manage_job_runs as api_manage_job_runs,
+)
+
 __all__ = [
     # Models and Enums
     "JobStatus",
@@ -84,4 +90,7 @@ __all__ = [
     "cancel_run",
     "list_runs",
     "wait_for_run",
+    # High-level API
+    "api_manage_jobs",
+    "api_manage_job_runs",
 ]

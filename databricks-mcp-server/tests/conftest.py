@@ -227,7 +227,7 @@ def pdf_schema(workspace_client: WorkspaceClient, test_catalog: str) -> Generato
 @pytest.fixture(scope="function")
 def cleanup_pipelines() -> Generator[Callable[[str], None], None, None]:
     """Register pipelines for cleanup after test."""
-    from databricks_mcp_server.tools.pipelines import manage_pipeline
+    from databricks_tools_core.spark_declarative_pipelines.pipelines_api import manage_pipeline
 
     pipelines_to_cleanup = []
 
@@ -247,7 +247,7 @@ def cleanup_pipelines() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_vs_endpoints() -> Generator[Callable[[str], None], None, None]:
     """Register vector search endpoints for cleanup after test."""
-    from databricks_mcp_server.tools.vector_search import manage_vs_endpoint
+    from databricks_tools_core.vector_search.vector_search_api import manage_vs_endpoint
 
     endpoints_to_cleanup = []
 
@@ -267,7 +267,7 @@ def cleanup_vs_endpoints() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_vs_indexes() -> Generator[Callable[[str], None], None, None]:
     """Register vector search indexes for cleanup after test."""
-    from databricks_mcp_server.tools.vector_search import manage_vs_index
+    from databricks_tools_core.vector_search.vector_search_api import manage_vs_index
 
     indexes_to_cleanup = []
 
@@ -278,7 +278,7 @@ def cleanup_vs_indexes() -> Generator[Callable[[str], None], None, None]:
 
     for name in indexes_to_cleanup:
         try:
-            manage_vs_index(action="delete", index_name=name)
+            manage_vs_index(action="delete", name=name)
             logger.info(f"Cleaned up VS index: {name}")
         except Exception as e:
             logger.warning(f"Failed to cleanup VS index {name}: {e}")
@@ -287,7 +287,7 @@ def cleanup_vs_indexes() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_jobs() -> Generator[Callable[[str], None], None, None]:
     """Register jobs for cleanup after test."""
-    from databricks_mcp_server.tools.jobs import manage_jobs
+    from databricks_tools_core.jobs.jobs_api import manage_jobs
 
     jobs_to_cleanup = []
 
@@ -307,7 +307,7 @@ def cleanup_jobs() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_dashboards() -> Generator[Callable[[str], None], None, None]:
     """Register dashboards for cleanup after test."""
-    from databricks_mcp_server.tools.aibi_dashboards import manage_dashboard
+    from databricks_tools_core.aibi_dashboards.aibi_dashboards_api import manage_dashboard
 
     dashboards_to_cleanup = []
 
@@ -327,7 +327,7 @@ def cleanup_dashboards() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_genie_spaces() -> Generator[Callable[[str], None], None, None]:
     """Register Genie spaces for cleanup after test."""
-    from databricks_mcp_server.tools.genie import manage_genie
+    from databricks_tools_core.agent_bricks import manage_genie
 
     spaces_to_cleanup = []
 
@@ -347,7 +347,7 @@ def cleanup_genie_spaces() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_apps() -> Generator[Callable[[str], None], None, None]:
     """Register apps for cleanup after test."""
-    from databricks_mcp_server.tools.apps import manage_app
+    from databricks_tools_core.apps.apps_api import manage_app
 
     apps_to_cleanup = []
 
@@ -367,7 +367,7 @@ def cleanup_apps() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_lakebase_instances() -> Generator[Callable[[str], None], None, None]:
     """Register Lakebase instances for cleanup after test."""
-    from databricks_mcp_server.tools.lakebase import manage_lakebase_database
+    from databricks_tools_core.lakebase.lakebase_api import manage_lakebase_database
 
     instances_to_cleanup = []
 
@@ -387,7 +387,7 @@ def cleanup_lakebase_instances() -> Generator[Callable[[str], None], None, None]
 @pytest.fixture(scope="function")
 def cleanup_ka() -> Generator[Callable[[str], None], None, None]:
     """Register Knowledge Assistants for cleanup after test."""
-    from databricks_mcp_server.tools.agent_bricks import manage_ka
+    from databricks_tools_core.agent_bricks.agent_bricks_api import manage_ka
 
     kas_to_cleanup = []
 
@@ -407,7 +407,7 @@ def cleanup_ka() -> Generator[Callable[[str], None], None, None]:
 @pytest.fixture(scope="function")
 def cleanup_mas() -> Generator[Callable[[str], None], None, None]:
     """Register Multi-Agent Supervisors for cleanup after test."""
-    from databricks_mcp_server.tools.agent_bricks import manage_mas
+    from databricks_tools_core.agent_bricks.agent_bricks_api import manage_mas
 
     mas_to_cleanup = []
 

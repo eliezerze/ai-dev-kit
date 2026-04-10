@@ -335,3 +335,21 @@ When asked to generate multiple PDFs:
 | "Schema does not exist" | Create the schema or check the name |
 | PDF looks wrong | Check HTML/CSS syntax, use supported CSS features |
 | Slow generation | Call multiple PDFs in parallel, not sequentially |
+
+---
+
+## CLI Quick Reference (aidevkit CLI)
+
+```bash
+# Generate PDF from HTML string
+aidevkit pdf generate --html "<html><body><h1>Report</h1></body></html>" \
+    --filename report.pdf --catalog my_catalog --schema my_schema
+
+# Generate PDF from HTML file
+aidevkit pdf generate --html-file ./report.html \
+    --filename report.pdf --catalog my_catalog --schema my_schema
+
+# Generate to a specific volume and folder
+aidevkit pdf generate --html "<html>...</html>" --filename doc.pdf \
+    --catalog my_catalog --schema my_schema --volume documents --folder 2024/q1
+```

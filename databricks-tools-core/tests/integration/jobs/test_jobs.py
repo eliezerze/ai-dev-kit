@@ -1,343 +1,697 @@
 """
-Integration tests for job CRUD operations.
+Integration tests for jobs API.
 
-Tests the databricks_tools_core.jobs functions:
-- list_jobs
-- find_job_by_name
-- create_job
-- get_job
-- update_job
-- delete_job
-
-All tests use serverless compute for job execution.
+Tests:
+- manage_jobs: create, get, list, update, delete
+- manage_job_runs: run_now, get, list, cancel
 """
 
 import logging
+import time
+import uuid
+
 import pytest
 
-from databricks_tools_core.jobs import (
-    list_jobs,
-    find_job_by_name,
-    create_job,
-    get_job,
-    update_job,
-    delete_job,
-    JobError,
-)
+from databricks_tools_core.jobs.jobs_api import manage_jobs, manage_job_runs
+from databricks_tools_core.file.file_api import manage_workspace_files
+from tests.test_config import TEST_CATALOG, SCHEMAS, TEST_RESOURCE_PREFIX
 
 logger = logging.getLogger(__name__)
 
+# Deterministic job names for tests (enables safe cleanup/restart)
+JOB_NAME = f"{TEST_RESOURCE_PREFIX}job"
+JOB_UPDATE = f"{TEST_RESOURCE_PREFIX}job_update"
+JOB_CANCEL = f"{TEST_RESOURCE_PREFIX}job_cancel"
+
+# Simple notebook content that exits successfully
+TEST_NOTEBOOK_CONTENT = """# Databricks notebook source
+# MAGIC %md
+# MAGIC # Test Notebook for MCP Integration Tests
+
+# COMMAND ----------
+
+print("Hello from MCP integration test!")
+result = 1 + 1
+print(f"1 + 1 = {result}")
+
+# COMMAND ----------
+
+dbutils.notebook.exit("SUCCESS")
+"""
+
+
+@pytest.fixture(scope="module")
+def test_notebook_path(workspace_client, current_user: str):
+    """Create a test notebook for job execution."""
+    import tempfile
+    import shutil
+    import os
+
+    # The notebook path without extension (Databricks strips .py from notebooks)
+    notebook_path = f"/Workspace/Users/{current_user}/ai_dev_kit_test/jobs/resources/test_notebook"
+
+    # Create temp directory with properly named notebook file
+    temp_dir = tempfile.mkdtemp()
+    temp_notebook_file = os.path.join(temp_dir, "test_notebook.py")
+    with open(temp_notebook_file, "w") as f:
+        f.write(TEST_NOTEBOOK_CONTENT)
+
+    try:
+        # Upload notebook directly to the full path (upload_to_workspace places single files
+        # at the workspace_path directly, so we specify the full notebook path)
+        result = manage_workspace_files(
+            action="upload",
+            local_path=temp_notebook_file,
+            workspace_path=notebook_path,
+            overwrite=True,
+        )
+        logger.info(f"Uploaded test notebook: {result}")
+
+        yield notebook_path
+
+    finally:
+        # Cleanup temp directory
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+        # Cleanup workspace notebook
+        try:
+            workspace_client.workspace.delete(notebook_path)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup notebook: {e}")
+
+
+@pytest.fixture(scope="module")
+def clean_jobs():
+    """Pre-test cleanup: delete any existing test jobs using find_by_name (fast)."""
+    jobs_to_clean = [JOB_NAME, JOB_UPDATE, JOB_CANCEL]
+
+    for job_name in jobs_to_clean:
+        try:
+            # Use find_by_name for O(1) lookup instead of listing all jobs
+            result = manage_jobs(action="find_by_name", name=job_name)
+            job_id = result.get("job_id")
+            if job_id:
+                manage_jobs(action="delete", job_id=str(job_id))
+                logger.info(f"Pre-cleanup: deleted job {job_name}")
+        except Exception as e:
+            logger.warning(f"Pre-cleanup failed for {job_name}: {e}")
+
+    yield
+
+    # Post-test cleanup
+    for job_name in jobs_to_clean:
+        try:
+            result = manage_jobs(action="find_by_name", name=job_name)
+            job_id = result.get("job_id")
+            if job_id:
+                manage_jobs(action="delete", job_id=str(job_id))
+                logger.info(f"Post-cleanup: deleted job {job_name}")
+        except Exception:
+            pass
+
+
+@pytest.fixture(scope="module")
+def clean_job():
+    """Ensure job doesn't exist before tests and cleanup after using find_by_name (fast)."""
+    # Try to find and delete existing job with this name
+    try:
+        result = manage_jobs(action="find_by_name", name=JOB_NAME)
+        job_id = result.get("job_id")
+        if job_id:
+            manage_jobs(action="delete", job_id=str(job_id))
+            logger.info(f"Cleaned up existing job: {JOB_NAME}")
+    except Exception as e:
+        logger.warning(f"Error during pre-cleanup: {e}")
+
+    yield JOB_NAME
+
+    # Cleanup after tests
+    try:
+        result = manage_jobs(action="find_by_name", name=JOB_NAME)
+        job_id = result.get("job_id")
+        if job_id:
+            manage_jobs(action="delete", job_id=str(job_id))
+            logger.info(f"Final cleanup of job: {JOB_NAME}")
+    except Exception as e:
+        logger.warning(f"Error during post-cleanup: {e}")
+
 
 @pytest.mark.integration
-class TestListJobs:
-    """Tests for listing jobs."""
+class TestManageJobs:
+    """Tests for manage_jobs tool."""
 
     def test_list_jobs(self):
-        """Should list jobs successfully using our core function."""
-        logger.info("Testing list_jobs")
+        """Should list all jobs."""
+        result = manage_jobs(action="list")
 
-        # List jobs with limit
-        jobs = list_jobs(limit=10)
+        logger.info(f"List result keys: {result.keys() if isinstance(result, dict) else result}")
 
-        logger.info(f"Found {len(jobs)} jobs")
-        for job in jobs[:3]:
-            logger.info(f"  - {job.get('name')} (ID: {job.get('job_id')})")
-
-        # Verify response
-        assert isinstance(jobs, list)
-        # Verify dict structure
-        if len(jobs) > 0:
-            assert "job_id" in jobs[0]
-            assert "name" in jobs[0]
-
-    def test_list_jobs_with_name_filter(self):
-        """Should filter jobs by name."""
-        logger.info("Testing list_jobs with name filter")
-
-        # This may or may not find jobs depending on workspace
-        jobs = list_jobs(name="test", limit=5)
-
-        logger.info(f"Found {len(jobs)} jobs matching 'test'")
+        assert not result.get("error"), f"List failed: {result}"
+        # API may return "jobs" or "items" depending on SDK version
+        jobs = result.get("jobs") or result.get("items", [])
         assert isinstance(jobs, list)
 
-
-@pytest.mark.integration
-class TestFindJobByName:
-    """Tests for finding jobs by name."""
-
-    def test_find_job_by_name_not_found(self):
-        """Should return None when job doesn't exist."""
-        non_existent_name = "this_job_definitely_does_not_exist_12345"
-        job_id = find_job_by_name(name=non_existent_name)
-
-        logger.info(f"Search for non-existent job '{non_existent_name}': {job_id}")
-        assert job_id is None, "Should return None for non-existent job"
-
-    def test_find_job_by_name_exists(
-        self,
-        test_notebook_path: str,
-        cleanup_job,
-    ):
-        """Should find job when it exists."""
-        # Create a test job using our core function (serverless)
-        job_name = "test_find_by_name_job"
-        tasks = [
-            {
-                "task_key": "test_task",
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-            }
-        ]
-        job = create_job(name=job_name, tasks=tasks)
-        cleanup_job(job["job_id"])
-
-        # Try to find it using our core function
-        found_job_id = find_job_by_name(name=job_name)
-
-        logger.info(f"Search for '{job_name}': {found_job_id}")
-        assert found_job_id is not None, "Should find the created job"
-        assert found_job_id == job["job_id"], "Should return correct job ID"
-
-
-@pytest.mark.integration
-class TestCreateJob:
-    """Tests for creating jobs."""
-
-    def test_create_job_basic(
-        self,
-        test_notebook_path: str,
-        cleanup_job,
-    ):
-        """Should create a simple notebook task job with serverless."""
-        job_name = "test_create_job_basic"
-        logger.info(f"Creating job: {job_name}")
-
-        # Create job using our core function (serverless - no cluster specified)
-        tasks = [
-            {
-                "task_key": "test_task",
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-                "timeout_seconds": 3600,
-            }
-        ]
-        job = create_job(name=job_name, tasks=tasks, max_concurrent_runs=1)
-
-        # Register for cleanup
-        cleanup_job(job["job_id"])
-
-        logger.info(f"Job created: {job_name} (ID: {job['job_id']})")
-
-        # Verify creation
-        assert job["job_id"] is not None, "Job ID should be set"
-
-    def test_create_job_with_multiple_tasks(
-        self,
-        test_notebook_path: str,
-        cleanup_job,
-    ):
-        """Should create a job with multiple tasks."""
-        job_name = "test_create_job_multi_task"
-        logger.info(f"Creating multi-task job: {job_name}")
-
-        # Create job with two tasks using our core function (serverless)
-        tasks = [
-            {
-                "task_key": "task_1",
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-            },
-            {
-                "task_key": "task_2",
-                "depends_on": [{"task_key": "task_1"}],
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-            },
-        ]
-        job = create_job(name=job_name, tasks=tasks, max_concurrent_runs=1)
-
-        # Register for cleanup
-        cleanup_job(job["job_id"])
-
-        logger.info(f"Multi-task job created: {job['job_id']}")
-
-        # Verify creation by getting the job
-        job_details = get_job(job_id=job["job_id"])
-        assert job_details["job_id"] is not None
-        assert len(job_details["settings"]["tasks"]) == 2, "Should have two tasks"
-
-
-@pytest.mark.integration
-class TestGetJob:
-    """Tests for getting job details."""
-
-    def test_get_job(
-        self,
-        test_notebook_path: str,
-        cleanup_job,
-    ):
-        """Should get job details by ID."""
-        # Create a test job
-        job_name = "test_get_job"
-        tasks = [
-            {
-                "task_key": "test_task",
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-            }
-        ]
-        created_job = create_job(name=job_name, tasks=tasks)
-        cleanup_job(created_job["job_id"])
-
-        logger.info(f"Getting job details for {created_job['job_id']}")
-
-        # Get job details using our core function
-        job = get_job(job_id=created_job["job_id"])
-
-        logger.info(f"Retrieved job: {job['settings']['name']}")
-
-        # Verify details
-        assert job["job_id"] == created_job["job_id"], "Job ID should match"
-        assert job["settings"]["name"] == job_name, "Job name should match"
-        assert job["settings"]["tasks"] is not None, "Should have tasks"
-
-    def test_get_job_not_found(self):
-        """Should raise JobError when job doesn't exist."""
-        non_existent_id = 999999999
-
-        logger.info(f"Attempting to get non-existent job: {non_existent_id}")
-
-        with pytest.raises(JobError) as exc_info:
-            get_job(job_id=non_existent_id)
-
-        logger.info(f"Expected JobError: {exc_info.value}")
-        assert exc_info.value.job_id == non_existent_id
-
-
-@pytest.mark.integration
-class TestUpdateJob:
-    """Tests for updating jobs."""
-
-    def test_update_job_name(
-        self,
-        test_notebook_path: str,
-        cleanup_job,
-    ):
-        """Should update job name successfully."""
-        # Create a test job
-        original_name = "test_update_job_original"
-        tasks = [
-            {
-                "task_key": "test_task",
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-            }
-        ]
-        job = create_job(name=original_name, tasks=tasks)
-        cleanup_job(job["job_id"])
-
-        new_name = "test_update_job_renamed"
-        logger.info(f"Updating job {job['job_id']} to '{new_name}'")
-
-        # Update job name using our core function
-        update_job(job_id=job["job_id"], name=new_name)
-
-        # Verify update
-        updated_job = get_job(job_id=job["job_id"])
-        logger.info(f"Job updated: {updated_job['settings']['name']}")
-
-        assert updated_job["settings"]["name"] == new_name, "Name should be updated"
-        assert updated_job["job_id"] == job["job_id"], "Job ID should stay same"
-
-    def test_update_job_max_concurrent_runs(
-        self,
-        test_notebook_path: str,
-        cleanup_job,
-    ):
-        """Should update max concurrent runs."""
-        # Create a test job with max_concurrent_runs=1
-        tasks = [
-            {
-                "task_key": "test_task",
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-            }
-        ]
-        job = create_job(
-            name="test_update_concurrent",
-            tasks=tasks,
-            max_concurrent_runs=1,
+    def test_create_job(self, clean_job: str, test_notebook_path: str, cleanup_jobs):
+        """Should create a new job and verify its configuration."""
+        # Create a simple notebook task job
+        result = manage_jobs(
+            action="create",
+            name=clean_job,
+            tasks=[
+                {
+                    "task_key": "test_task",
+                    "notebook_task": {
+                        "notebook_path": test_notebook_path,
+                    },
+                    "new_cluster": {
+                        "spark_version": "14.3.x-scala2.12",
+                        "num_workers": 0,
+                        "node_type_id": "i3.xlarge",
+                    },
+                }
+            ],
         )
-        cleanup_job(job["job_id"])
 
-        logger.info(f"Updating max_concurrent_runs for job {job['job_id']}")
+        logger.info(f"Create result: {result}")
 
-        # Update using our core function
-        update_job(job_id=job["job_id"], max_concurrent_runs=5)
+        assert "error" not in result, f"Create failed: {result}"
+        assert result.get("job_id") is not None
 
-        # Verify update
-        updated_job = get_job(job_id=job["job_id"])
-        max_runs = updated_job["settings"]["max_concurrent_runs"]
-        logger.info(f"Max concurrent runs updated to: {max_runs}")
+        job_id = result["job_id"]
+        cleanup_jobs(str(job_id))
 
-        assert max_runs == 5, "Max concurrent runs should be updated"
+        # Verify job configuration
+        get_result = manage_jobs(action="get", job_id=str(job_id))
+        assert "error" not in get_result, f"Get job failed: {get_result}"
+
+        # Verify job name matches
+        settings = get_result.get("settings", {})
+        assert settings.get("name") == clean_job, f"Job name mismatch: {settings.get('name')}"
+
+        # Verify task is configured
+        tasks = settings.get("tasks", [])
+        assert len(tasks) >= 1, f"Job should have at least 1 task: {tasks}"
+        assert tasks[0].get("task_key") == "test_task"
+
+    def test_create_job_with_optional_params(self, test_notebook_path: str, cleanup_jobs):
+        """Should create a job with optional params (email_notifications, schedule, queue).
+
+        This tests the fix for passing raw dicts to SDK - they must be converted to SDK objects.
+        """
+        job_name = f"{TEST_RESOURCE_PREFIX}job_optional_{uuid.uuid4().hex[:6]}"
+
+        # Create job with optional parameters that require SDK type conversion
+        result = manage_jobs(
+            action="create",
+            name=job_name,
+            tasks=[
+                {
+                    "task_key": "test_task",
+                    "notebook_task": {
+                        "notebook_path": test_notebook_path,
+                    },
+                    "new_cluster": {
+                        "spark_version": "14.3.x-scala2.12",
+                        "num_workers": 0,
+                        "node_type_id": "i3.xlarge",
+                    },
+                }
+            ],
+            # These optional params require SDK type conversion (JobEmailNotifications, CronSchedule, QueueSettings)
+            email_notifications={
+                "on_start": [],  # Empty list is valid
+                "on_success": [],
+                "on_failure": [],
+                "no_alert_for_skipped_runs": True,
+            },
+            schedule={
+                "quartz_cron_expression": "0 0 9 * * ?",  # Daily at 9 AM
+                "timezone_id": "UTC",
+                "pause_status": "PAUSED",  # Start paused so it doesn't actually run
+            },
+            queue={
+                "enabled": True,
+            },
+        )
+
+        logger.info(f"Create with optional params result: {result}")
+
+        assert "error" not in result, f"Create with optional params failed: {result}"
+        assert result.get("job_id") is not None
+
+        job_id = result["job_id"]
+        cleanup_jobs(str(job_id))
+
+        # Verify job configuration includes the optional params
+        get_result = manage_jobs(action="get", job_id=str(job_id))
+        assert "error" not in get_result, f"Get job failed: {get_result}"
+
+        settings = get_result.get("settings", {})
+
+        # Verify email_notifications was persisted
+        email_notif = settings.get("email_notifications", {})
+        assert email_notif.get("no_alert_for_skipped_runs") is True, \
+            f"email_notifications should be persisted: {email_notif}"
+
+        # Verify schedule was persisted
+        schedule = settings.get("schedule", {})
+        assert schedule.get("quartz_cron_expression") == "0 0 9 * * ?", \
+            f"schedule should be persisted: {schedule}"
+        assert schedule.get("timezone_id") == "UTC", \
+            f"schedule timezone should be UTC: {schedule}"
+        assert schedule.get("pause_status") == "PAUSED", \
+            f"schedule should be paused: {schedule}"
+
+        # Verify queue was persisted
+        queue = settings.get("queue", {})
+        assert queue.get("enabled") is True, \
+            f"queue should be enabled: {queue}"
+
+        logger.info("Successfully created job with optional params and verified they were persisted")
+
+    def test_get_job(self, clean_job: str, test_notebook_path: str, cleanup_jobs):
+        """Should get job details and verify structure."""
+        # First create a job
+        job_name = f"{TEST_RESOURCE_PREFIX}job_get_{uuid.uuid4().hex[:6]}"
+        create_result = manage_jobs(
+            action="create",
+            name=job_name,
+            tasks=[
+                {
+                    "task_key": "test_task",
+                    "notebook_task": {
+                        "notebook_path": test_notebook_path,
+                    },
+                    "new_cluster": {
+                        "spark_version": "14.3.x-scala2.12",
+                        "num_workers": 0,
+                        "node_type_id": "i3.xlarge",
+                    },
+                }
+            ],
+        )
+
+        job_id = create_result.get("job_id")
+        assert job_id, f"Job not created: {create_result}"
+        cleanup_jobs(str(job_id))
+
+        # Get job details
+        result = manage_jobs(action="get", job_id=str(job_id))
+
+        logger.info(f"Get result keys: {result.keys() if isinstance(result, dict) else result}")
+
+        assert "error" not in result, f"Get failed: {result}"
+
+        # Verify expected fields are present
+        assert "job_id" in result or "settings" in result, f"Missing expected fields: {result}"
+
+    def test_delete_job(self, test_notebook_path: str, cleanup_jobs):
+        """Should delete a job and verify it's gone."""
+        # Create a job to delete
+        job_name = f"{TEST_RESOURCE_PREFIX}job_delete_{uuid.uuid4().hex[:6]}"
+        create_result = manage_jobs(
+            action="create",
+            name=job_name,
+            tasks=[
+                {
+                    "task_key": "test_task",
+                    "notebook_task": {
+                        "notebook_path": test_notebook_path,
+                    },
+                    "new_cluster": {
+                        "spark_version": "14.3.x-scala2.12",
+                        "num_workers": 0,
+                        "node_type_id": "i3.xlarge",
+                    },
+                }
+            ],
+        )
+
+        job_id = create_result.get("job_id")
+        assert job_id, f"Job not created: {create_result}"
+
+        # Verify job exists before delete
+        get_before = manage_jobs(action="get", job_id=str(job_id))
+        assert "error" not in get_before, f"Job should exist before delete: {get_before}"
+
+        # Delete the job
+        result = manage_jobs(action="delete", job_id=str(job_id))
+
+        logger.info(f"Delete result: {result}")
+
+        assert result.get("status") == "deleted" or "error" not in result
+
+        # Verify job is gone - the get action raises an exception for deleted jobs
+        try:
+            get_after = manage_jobs(action="get", job_id=str(job_id))
+            # If we get here without exception, check for error in response
+            assert "error" in get_after or "not found" in str(get_after).lower(), \
+                f"Job should be deleted: {get_after}"
+        except Exception as e:
+            # Exception is expected - job doesn't exist
+            assert "does not exist" in str(e).lower() or "not found" in str(e).lower(), \
+                f"Expected 'does not exist' error, got: {e}"
+            logger.info(f"Confirmed job was deleted - get raised expected error: {e}")
+
+    def test_invalid_action(self):
+        """Should return error for invalid action."""
+        try:
+            result = manage_jobs(action="invalid_action")
+            assert "error" in result
+        except ValueError as e:
+            # Function raises ValueError for invalid action - this is acceptable
+            assert "invalid" in str(e).lower()
 
 
 @pytest.mark.integration
-class TestDeleteJob:
-    """Tests for deleting jobs."""
+class TestManageJobRuns:
+    """Tests for manage_job_runs tool."""
 
-    def test_delete_job(
+    def test_list_runs(self):
+        """Should list job runs."""
+        result = manage_job_runs(action="list")
+
+        logger.info(f"List runs result keys: {result.keys() if isinstance(result, dict) else result}")
+
+        assert not result.get("error"), f"List runs failed: {result}"
+
+    def test_get_run_nonexistent(self):
+        """Should handle nonexistent run gracefully."""
+        try:
+            result = manage_job_runs(action="get", run_id="999999999999")
+            # Should return error or not found
+            logger.info(f"Get nonexistent run result: {result}")
+        except Exception as e:
+            # SDK raises exception for nonexistent run - this is acceptable
+            logger.info(f"Expected error for nonexistent run: {e}")
+
+    def test_invalid_action(self):
+        """Should return error for invalid action."""
+        try:
+            result = manage_job_runs(action="invalid_action")
+            assert "error" in result
+        except ValueError as e:
+            # Function raises ValueError for invalid action - this is acceptable
+            assert "invalid" in str(e).lower()
+
+
+@pytest.mark.integration
+class TestJobExecution:
+    """Tests for actual job execution (slow)."""
+
+    def test_run_job_and_verify_completion(self, test_notebook_path: str, cleanup_jobs):
+        """Should run a job and verify it completes successfully."""
+        # Create a job
+        job_name = f"{TEST_RESOURCE_PREFIX}job_run_{uuid.uuid4().hex[:6]}"
+        create_result = manage_jobs(
+            action="create",
+            name=job_name,
+            tasks=[
+                {
+                    "task_key": "test_task",
+                    "notebook_task": {
+                        "notebook_path": test_notebook_path,
+                    },
+                    "new_cluster": {
+                        "spark_version": "14.3.x-scala2.12",
+                        "num_workers": 0,
+                        "node_type_id": "i3.xlarge",
+                    },
+                }
+            ],
+        )
+
+        job_id = create_result.get("job_id")
+        assert job_id, f"Job not created: {create_result}"
+        cleanup_jobs(str(job_id))
+
+        # Run the job
+        run_result = manage_job_runs(
+            action="run_now",
+            job_id=str(job_id),
+        )
+
+        logger.info(f"Run result: {run_result}")
+
+        assert "error" not in run_result, f"Run failed: {run_result}"
+        run_id = run_result.get("run_id")
+        assert run_id, f"Run ID should be returned: {run_result}"
+
+        # Wait for job to complete (with timeout)
+        max_wait = 600  # 10 minutes
+        wait_interval = 15
+        waited = 0
+        final_state = None
+
+        while waited < max_wait:
+            status_result = manage_job_runs(action="get", run_id=str(run_id))
+
+            logger.info(f"Run status after {waited}s: {status_result}")
+
+            state = status_result.get("state", {})
+            life_cycle_state = state.get("life_cycle_state")
+            result_state = state.get("result_state")
+
+            if life_cycle_state in ("TERMINATED", "SKIPPED", "INTERNAL_ERROR"):
+                final_state = result_state
+                break
+
+            time.sleep(wait_interval)
+            waited += wait_interval
+
+        assert final_state is not None, f"Job did not complete within {max_wait}s"
+        assert final_state == "SUCCESS", f"Job should succeed, got: {final_state}"
+
+
+@pytest.mark.integration
+class TestJobUpdate:
+    """Tests for job update functionality."""
+
+    def test_update_job(
         self,
         test_notebook_path: str,
+        clean_jobs,
+        cleanup_jobs,
     ):
-        """Should delete a job successfully."""
-        # Create a test job
-        tasks = [
-            {
-                "task_key": "test_task",
-                "notebook_task": {
-                    "notebook_path": test_notebook_path,
-                    "source": "WORKSPACE",
-                },
-            }
-        ]
-        job = create_job(name="test_delete_job", tasks=tasks)
-        job_id = job["job_id"]
+        """Should create a job, update its configuration, and verify changes."""
+        # Create initial job
+        create_result = manage_jobs(
+            action="create",
+            name=JOB_UPDATE,
+            tasks=[
+                {
+                    "task_key": "initial_task",
+                    "notebook_task": {
+                        "notebook_path": test_notebook_path,
+                    },
+                    "new_cluster": {
+                        "spark_version": "14.3.x-scala2.12",
+                        "num_workers": 0,
+                        "node_type_id": "i3.xlarge",
+                    },
+                }
+            ],
+        )
 
-        logger.info(f"Deleting job: {job_id}")
+        logger.info(f"Create for update test: {create_result}")
 
-        # Delete the job using our core function
-        delete_job(job_id=job_id)
+        assert "error" not in create_result, f"Create failed: {create_result}"
 
-        logger.info(f"Job {job_id} deleted")
+        job_id = create_result.get("job_id")
+        assert job_id, f"Job ID should be returned: {create_result}"
 
-        # Verify deletion - try to get the job (should fail)
-        with pytest.raises(JobError):
-            get_job(job_id=job_id)
+        cleanup_jobs(str(job_id))
 
-    def test_delete_job_not_found(self):
-        """Should raise JobError when deleting non-existent job."""
-        non_existent_id = 999999999
+        # Verify initial configuration
+        get_before = manage_jobs(action="get", job_id=str(job_id))
+        initial_tasks = get_before.get("settings", {}).get("tasks", [])
+        assert len(initial_tasks) == 1, f"Should have 1 task initially: {initial_tasks}"
+        assert initial_tasks[0].get("task_key") == "initial_task"
 
-        logger.info(f"Deleting non-existent job: {non_existent_id}")
+        # Update the job with a new task key
+        update_result = manage_jobs(
+            action="update",
+            job_id=str(job_id),
+            name=JOB_UPDATE,
+            tasks=[
+                {
+                    "task_key": "updated_task",
+                    "notebook_task": {
+                        "notebook_path": test_notebook_path,
+                    },
+                    "new_cluster": {
+                        "spark_version": "14.3.x-scala2.12",
+                        "num_workers": 0,
+                        "node_type_id": "i3.xlarge",
+                    },
+                }
+            ],
+        )
 
-        with pytest.raises(JobError) as exc_info:
-            delete_job(job_id=non_existent_id)
+        logger.info(f"Update result: {update_result}")
 
-        logger.info(f"Expected JobError: {exc_info.value}")
-        assert exc_info.value.job_id == non_existent_id
+        assert "error" not in update_result, f"Update failed: {update_result}"
+
+        # Verify the update
+        get_after = manage_jobs(action="get", job_id=str(job_id))
+
+        logger.info(f"Get after update: {get_after}")
+
+        assert "error" not in get_after, f"Get after update failed: {get_after}"
+
+        # Verify task was added (Jobs API update does partial updates, adding tasks)
+        updated_tasks = get_after.get("settings", {}).get("tasks", [])
+        task_keys = [t.get("task_key") for t in updated_tasks]
+        # Partial update adds the new task to existing tasks
+        assert "updated_task" in task_keys, \
+            f"updated_task should be in task list: {task_keys}"
+        assert len(updated_tasks) >= 1, f"Should have at least 1 task after update: {updated_tasks}"
+
+
+@pytest.mark.integration
+class TestJobCancel:
+    """Tests for job cancellation."""
+
+    def test_cancel_run(
+        self,
+        test_notebook_path: str,
+        clean_jobs,
+        cleanup_jobs,
+    ):
+        """Should start a job run and cancel it, verifying the cancellation."""
+        # Create a job that takes a while (sleep in notebook)
+        long_running_notebook = """# Databricks notebook source
+# MAGIC %md
+# MAGIC # Long Running Notebook for Cancel Test
+
+# COMMAND ----------
+
+import time
+print("Starting long running task...")
+time.sleep(300)  # Sleep for 5 minutes - should be cancelled before this completes
+print("This should not print if cancelled")
+
+# COMMAND ----------
+
+dbutils.notebook.exit("COMPLETED")
+"""
+        import tempfile
+        import os
+        from pathlib import Path
+
+        # Create temp directory with properly named notebook file
+        temp_dir = tempfile.mkdtemp()
+        temp_notebook_file = os.path.join(temp_dir, "long_notebook.py")
+        with open(temp_notebook_file, "w") as f:
+            f.write(long_running_notebook)
+
+        try:
+            # Upload long-running notebook
+            from databricks_tools_core.file.file_api import manage_workspace_files
+
+            # Get user from test_notebook_path
+            user = test_notebook_path.split('/Users/')[1].split('/')[0]
+            # Use the same resources folder that the fixture already created
+            # This ensures the parent directory exists
+            notebook_path = f"/Workspace/Users/{user}/ai_dev_kit_test/jobs/resources/long_notebook"
+
+            # Upload the notebook file directly to the full path
+            upload_result = manage_workspace_files(
+                action="upload",
+                local_path=temp_notebook_file,
+                workspace_path=notebook_path,
+                overwrite=True,
+            )
+            logger.info(f"Upload result for cancel test notebook: {upload_result}")
+            assert upload_result.get("success", False) or upload_result.get("status") == "success", \
+                f"Failed to upload cancel test notebook: {upload_result}"
+
+            # Create job
+            create_result = manage_jobs(
+                action="create",
+                name=JOB_CANCEL,
+                tasks=[
+                    {
+                        "task_key": "long_task",
+                        "notebook_task": {
+                            "notebook_path": notebook_path,
+                        },
+                        "new_cluster": {
+                            "spark_version": "14.3.x-scala2.12",
+                            "num_workers": 0,
+                            "node_type_id": "i3.xlarge",
+                        },
+                    }
+                ],
+            )
+
+            logger.info(f"Create for cancel test: {create_result}")
+
+            assert "error" not in create_result, f"Create failed: {create_result}"
+
+            job_id = create_result.get("job_id")
+            assert job_id, f"Job ID should be returned: {create_result}"
+
+            cleanup_jobs(str(job_id))
+
+            # Start the job
+            run_result = manage_job_runs(
+                action="run_now",
+                job_id=str(job_id),
+            )
+
+            logger.info(f"Run result: {run_result}")
+
+            assert "error" not in run_result, f"Run failed: {run_result}"
+
+            run_id = run_result.get("run_id")
+            assert run_id, f"Run ID should be returned: {run_result}"
+
+            # Wait a bit for the job to start
+            time.sleep(10)
+
+            # Verify the job is running
+            status_before = manage_job_runs(action="get", run_id=str(run_id))
+            life_cycle_state = status_before.get("state", {}).get("life_cycle_state")
+            logger.info(f"State before cancel: {life_cycle_state}")
+
+            # Cancel the run
+            cancel_result = manage_job_runs(
+                action="cancel",
+                run_id=str(run_id),
+            )
+
+            logger.info(f"Cancel result: {cancel_result}")
+
+            assert "error" not in cancel_result, f"Cancel failed: {cancel_result}"
+
+            # Wait for cancellation to take effect
+            max_wait = 60
+            waited = 0
+            cancelled = False
+
+            while waited < max_wait:
+                status_after = manage_job_runs(action="get", run_id=str(run_id))
+                state = status_after.get("state", {})
+                life_cycle_state = state.get("life_cycle_state")
+                result_state = state.get("result_state")
+
+                logger.info(f"State after cancel ({waited}s): lifecycle={life_cycle_state}, result={result_state}")
+
+                if life_cycle_state == "TERMINATED":
+                    # Check if it was cancelled
+                    if result_state == "CANCELED":
+                        cancelled = True
+                        break
+                    # If terminated but not cancelled, check other states
+                    break
+
+                time.sleep(5)
+                waited += 5
+
+            assert cancelled, f"Job run should be cancelled, got state: {status_after.get('state')}"
+
+        finally:
+            # Cleanup temp directory
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)

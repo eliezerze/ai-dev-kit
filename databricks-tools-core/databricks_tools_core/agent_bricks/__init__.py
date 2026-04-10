@@ -8,6 +8,8 @@ This module provides a unified interface for managing Agent Bricks resources:
 """
 
 from .manager import AgentBricksManager, TileExampleQueue, get_tile_example_queue
+from .genie import manage_genie, ask_genie
+from .agent_bricks_api import manage_ka, manage_mas
 from .models import (
     # Enums
     EndpointStatus,
@@ -43,6 +45,12 @@ from .models import (
 __all__ = [
     # Main class
     "AgentBricksManager",
+    # High-level API
+    "manage_ka",
+    "manage_mas",
+    # Genie operations
+    "manage_genie",
+    "ask_genie",
     # Background queue
     "TileExampleQueue",
     "get_tile_example_queue",

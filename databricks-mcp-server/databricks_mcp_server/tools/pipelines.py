@@ -1,6 +1,9 @@
 """Pipeline tools - Manage Spark Declarative Pipelines (SDP).
 
-Consolidated into 2 tools:
+Thin MCP wrapper around databricks_tools_core.spark_declarative_pipelines.pipelines_api.
+All business logic is in the core module.
+
+2 tools:
 - manage_pipeline: create, create_or_update, get, update, delete, find_by_name
 - manage_pipeline_run: start, get, stop, get_events
 """
@@ -8,21 +11,35 @@ Consolidated into 2 tools:
 from typing import List, Dict, Any, Optional
 
 from databricks_tools_core.identity import get_default_tags
+from databricks_tools_core.spark_declarative_pipelines.pipelines_api import (
+    manage_pipeline as _manage_pipeline,
+    manage_pipeline_run as _manage_pipeline_run,
+)
 from databricks_tools_core.spark_declarative_pipelines.pipelines import (
-    create_pipeline as _create_pipeline,
-    get_pipeline as _get_pipeline,
-    update_pipeline as _update_pipeline,
     delete_pipeline as _delete_pipeline,
-    start_update as _start_update,
-    get_update as _get_update,
-    stop_pipeline as _stop_pipeline,
-    get_pipeline_events as _get_pipeline_events,
-    create_or_update_pipeline as _create_or_update_pipeline,
-    find_pipeline_by_name as _find_pipeline_by_name,
 )
 
-from ..manifest import register_deleter
+from ..manifest import register_deleter, track_resource, remove_resource
 from ..server import mcp
+
+
+# CLI_MAPPING for skill transformation
+CLI_MAPPING = {
+    "manage_pipeline": {
+        "create": "aidevkit pipelines create",
+        "create_or_update": "aidevkit pipelines create-or-update",
+        "get": "aidevkit pipelines get",
+        "update": "aidevkit pipelines update",
+        "delete": "aidevkit pipelines delete",
+        "find_by_name": "aidevkit pipelines find-by-name",
+    },
+    "manage_pipeline_run": {
+        "start": "aidevkit pipelines run-start",
+        "get": "aidevkit pipelines run-get",
+        "stop": "aidevkit pipelines run-stop",
+        "get_events": "aidevkit pipelines run-events",
+    },
+}
 
 
 def _delete_pipeline_resource(resource_id: str) -> None:
@@ -30,6 +47,16 @@ def _delete_pipeline_resource(resource_id: str) -> None:
 
 
 register_deleter("pipeline", _delete_pipeline_resource)
+
+
+def _on_pipeline_created(resource_type: str, name: str, resource_id: str, url: Optional[str] = None) -> None:
+    """Callback to track pipeline in MCP manifest."""
+    track_resource(
+        resource_type=resource_type,
+        name=name,
+        resource_id=resource_id,
+        url=url,
+    )
 
 
 # ============================================================================
@@ -73,111 +100,32 @@ def manage_pipeline(
     workspace_file_paths: List of notebook/file paths to include in pipeline.
     extra_settings: Additional config dict (clusters, photon, channel, continuous, etc).
     See databricks-spark-declarative-pipelines skill for configuration details."""
-    act = action.lower()
-
-    if act == "create":
-        if not all([name, root_path, catalog, schema, workspace_file_paths]):
-            return {"error": "create requires: name, root_path, catalog, schema, workspace_file_paths"}
-
-        # Auto-inject default tags
-        settings = extra_settings or {}
-        settings.setdefault("tags", {})
-        settings["tags"] = {**get_default_tags(), **settings["tags"]}
-
-        result = _create_pipeline(
-            name=name,
-            root_path=root_path,
-            catalog=catalog,
-            schema=schema,
-            workspace_file_paths=workspace_file_paths,
-            extra_settings=settings,
-        )
-
-        # Track resource
+    # Handle delete specially to also remove from manifest
+    if action.lower() == "delete" and pipeline_id:
+        result = _manage_pipeline(action=action, pipeline_id=pipeline_id)
         try:
-            if result.pipeline_id:
-                from ..manifest import track_resource
-                track_resource(resource_type="pipeline", name=name, resource_id=result.pipeline_id)
-        except Exception:
-            pass
-
-        return {"pipeline_id": result.pipeline_id}
-
-    elif act == "create_or_update":
-        if not all([name, root_path, catalog, schema, workspace_file_paths]):
-            return {"error": "create_or_update requires: name, root_path, catalog, schema, workspace_file_paths"}
-
-        # Auto-inject default tags
-        settings = extra_settings or {}
-        settings.setdefault("tags", {})
-        settings["tags"] = {**get_default_tags(), **settings["tags"]}
-
-        result = _create_or_update_pipeline(
-            name=name,
-            root_path=root_path,
-            catalog=catalog,
-            schema=schema,
-            workspace_file_paths=workspace_file_paths,
-            start_run=start_run,
-            wait_for_completion=wait_for_completion,
-            full_refresh=full_refresh,
-            timeout=timeout,
-            extra_settings=settings,
-        )
-
-        # Track resource
-        try:
-            result_dict = result.to_dict()
-            pid = result_dict.get("pipeline_id")
-            if pid:
-                from ..manifest import track_resource
-                track_resource(resource_type="pipeline", name=name, resource_id=pid)
-        except Exception:
-            pass
-
-        return result.to_dict()
-
-    elif act == "get":
-        if not pipeline_id:
-            return {"error": "get requires: pipeline_id"}
-        result = _get_pipeline(pipeline_id=pipeline_id)
-        return result.as_dict() if hasattr(result, "as_dict") else vars(result)
-
-    elif act == "update":
-        if not pipeline_id:
-            return {"error": "update requires: pipeline_id"}
-        _update_pipeline(
-            pipeline_id=pipeline_id,
-            name=name,
-            root_path=root_path,
-            catalog=catalog,
-            schema=schema,
-            workspace_file_paths=workspace_file_paths,
-            extra_settings=extra_settings,
-        )
-        return {"status": "updated", "pipeline_id": pipeline_id}
-
-    elif act == "delete":
-        if not pipeline_id:
-            return {"error": "delete requires: pipeline_id"}
-        _delete_pipeline(pipeline_id=pipeline_id)
-        try:
-            from ..manifest import remove_resource
             remove_resource(resource_type="pipeline", resource_id=pipeline_id)
         except Exception:
             pass
-        return {"status": "deleted", "pipeline_id": pipeline_id}
+        return result
 
-    elif act == "find_by_name":
-        if not name:
-            return {"error": "find_by_name requires: name"}
-        pid = _find_pipeline_by_name(name=name)
-        return {"found": pid is not None, "pipeline_id": pid, "name": name}
-
-    else:
-        return {
-            "error": f"Invalid action '{action}'. Valid actions: create, create_or_update, get, update, delete, find_by_name"
-        }
+    # Delegate to core API
+    return _manage_pipeline(
+        action=action,
+        name=name,
+        root_path=root_path,
+        catalog=catalog,
+        schema=schema,
+        workspace_file_paths=workspace_file_paths,
+        extra_settings=extra_settings,
+        start_run=start_run,
+        wait_for_completion=wait_for_completion,
+        full_refresh=full_refresh,
+        timeout=timeout,
+        pipeline_id=pipeline_id,
+        on_resource_created=_on_pipeline_created,
+        get_default_tags=get_default_tags,
+    )
 
 
 # ============================================================================
@@ -222,50 +170,18 @@ def manage_pipeline_run(
       Returns: list of event dicts.
 
     See databricks-spark-declarative-pipelines skill for run management details."""
-    act = action.lower()
-
-    if act == "start":
-        return _start_update(
-            pipeline_id=pipeline_id,
-            refresh_selection=refresh_selection,
-            full_refresh=full_refresh,
-            full_refresh_selection=full_refresh_selection,
-            validate_only=validate_only,
-            wait=wait,
-            timeout=timeout,
-            full_error_details=full_error_details,
-        )
-
-    elif act == "get":
-        if not update_id:
-            return {"error": "get requires: update_id"}
-        return _get_update(
-            pipeline_id=pipeline_id,
-            update_id=update_id,
-            include_config=include_config,
-            full_error_details=full_error_details,
-        )
-
-    elif act == "stop":
-        _stop_pipeline(pipeline_id=pipeline_id)
-        return {"status": "stopped", "pipeline_id": pipeline_id}
-
-    elif act == "get_events":
-        # Convert log level to filter expression
-        level_filters = {
-            "ERROR": "level='ERROR'",
-            "WARN": "level in ('ERROR', 'WARN')",
-            "INFO": "",  # No filter = all events
-        }
-        filter_expr = level_filters.get(event_log_level.upper(), level_filters["WARN"])
-
-        events = _get_pipeline_events(
-            pipeline_id=pipeline_id,
-            max_results=max_results,
-            filter=filter_expr,
-            update_id=update_id,
-        )
-        return {"events": [e.as_dict() if hasattr(e, "as_dict") else vars(e) for e in events]}
-
-    else:
-        return {"error": f"Invalid action '{action}'. Valid actions: start, get, stop, get_events"}
+    return _manage_pipeline_run(
+        action=action,
+        pipeline_id=pipeline_id,
+        refresh_selection=refresh_selection,
+        full_refresh=full_refresh,
+        full_refresh_selection=full_refresh_selection,
+        validate_only=validate_only,
+        wait=wait,
+        timeout=timeout,
+        update_id=update_id,
+        include_config=include_config,
+        full_error_details=full_error_details,
+        max_results=max_results,
+        event_log_level=event_log_level,
+    )

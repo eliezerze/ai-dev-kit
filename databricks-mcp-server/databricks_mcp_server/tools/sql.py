@@ -7,13 +7,13 @@ Tools:
 - get_table_stats_and_schema: Schema and stats for tables
 - get_volume_folder_details: Schema for volume files
 
-This module is a thin wrapper around databricks_tools_core.sql.workflows.
+This module is a thin wrapper around databricks_tools_core.sql.sql_api.
 All business logic lives in the workflows module.
 """
 
 from typing import Any, Dict, List, Optional, Union
 
-from databricks_tools_core.sql.workflows import (
+from databricks_tools_core.sql.sql_api import (
     execute_sql as _execute_sql,
     execute_sql_multi as _execute_sql_multi,
     manage_warehouse as _manage_warehouse,

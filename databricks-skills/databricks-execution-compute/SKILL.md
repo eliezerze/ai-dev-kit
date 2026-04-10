@@ -50,30 +50,76 @@ python my_spark_script.py
 
 ### Serverless Job → [reference](references/2-serverless-job.md)
 
-```python
-execute_code(file_path="/path/to/script.py")
+```bash
+aidevkit compute execute --file ./script.py
 ```
 
 ### Interactive Cluster → [reference](references/3-interactive-cluster.md)
 
-```python
-# Check for running clusters first (or use the one instructed)
-list_compute(resource="clusters")
+```bash
+# Check for running clusters first
+aidevkit compute list --resource clusters
 # Ask the customer which one to use
 
-# Run code, reuse context_id for follow-up MCP call
-result = execute_code(code="...", compute_type="cluster", cluster_id="...")
-execute_code(code="...", context_id=result["context_id"], cluster_id=result["cluster_id"])
+# Run code on specific cluster
+aidevkit compute execute --code "print(spark.version)" --compute cluster --cluster-id abc123
 ```
 
-## MCP Tools
+---
 
-| Tool | For | Purpose |
-|------|-----|---------|
-| `execute_code` | Serverless, Interactive | Run code remotely |
-| `list_compute` | Interactive | List clusters, check status, auto-select running cluster |
-| `manage_cluster` | Interactive | Create, start, terminate, delete. **COSTLY:** `start` takes 3-8 min—ask user |
-| `manage_sql_warehouse` | SQL | Create, modify, delete SQL warehouses |
+## CLI Quick Reference (aidevkit CLI)
+
+### Code Execution
+```bash
+# Execute Python code on serverless
+aidevkit compute execute --code "print('hello')"
+
+# Execute SQL
+aidevkit compute execute --code "SELECT * FROM catalog.schema.table LIMIT 10" --language sql
+
+# Execute from file
+aidevkit compute execute --file ./script.py
+
+# Execute on specific cluster
+aidevkit compute execute --code "print(spark.version)" --compute cluster --cluster-id abc123
+```
+
+### Cluster Management
+```bash
+# List clusters
+aidevkit compute list --resource clusters
+
+# Create cluster
+aidevkit compute cluster create --name my-cluster --workers 2
+
+# Create with autoscale
+aidevkit compute cluster create --name my-cluster --autoscale-min 1 --autoscale-max 4
+
+# Get cluster status
+aidevkit compute cluster get --cluster-id abc123
+
+# Start/terminate/delete cluster
+aidevkit compute cluster start --cluster-id abc123
+aidevkit compute cluster terminate --cluster-id abc123
+aidevkit compute cluster delete --cluster-id abc123
+
+# Modify cluster
+aidevkit compute cluster modify --cluster-id abc123 --workers 4
+```
+
+### SQL Warehouse Management
+```bash
+# Create warehouse
+aidevkit compute warehouse create --name my-warehouse --size SMALL
+
+# Modify warehouse
+aidevkit compute warehouse modify --warehouse-id wh123 --size MEDIUM
+
+# Delete warehouse
+aidevkit compute warehouse delete --warehouse-id wh123
+```
+
+---
 
 ## Related Skills
 

@@ -3,13 +3,13 @@
 Consolidated into 1 tool:
 - manage_workspace_files: upload, delete
 
-This module is a thin wrapper around databricks_tools_core.file.workflows.
+This module is a thin wrapper around databricks_tools_core.file.file_api.
 All business logic lives in the workflows module.
 """
 
 from typing import Any, Dict, Optional
 
-from databricks_tools_core.file.workflows import manage_workspace_files as _manage_workspace_files
+from databricks_tools_core.file.file_api import manage_workspace_files as _manage_workspace_files
 
 from ..server import mcp
 

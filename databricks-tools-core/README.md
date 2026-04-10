@@ -361,57 +361,59 @@ The project includes comprehensive integration tests that run against a real Dat
 # Install dev dependencies
 uv pip install -e ".[dev]"
 
-# Run all integration tests
-uv run pytest tests/integration/ -v
+# Run all integration tests in parallel (recommended)
+python tests/integration/run_tests.py
 
-# Run specific test file
+# Run all tests including slow tests (like cluster creation)
+python tests/integration/run_tests.py --all
+
+# Run with fewer parallel workers (default: 8)
+python tests/integration/run_tests.py -j 4
+
+# Show report from the latest run
+python tests/integration/run_tests.py --report
+
+# Or use pytest directly for specific tests
 uv run pytest tests/integration/sql/test_sql.py -v
 
 # Run specific test class
-uv run pytest tests/integration/sql/test_table_stats.py::TestTableStatLevelDetailed -v
-
-# Run with more verbose output
-uv run pytest tests/integration/ -v --tb=long
+uv run pytest tests/integration/agent_bricks/test_agent_bricks.py::TestManageKA -v
 ```
+
+Results are saved to `tests/integration/.test-results/<timestamp>/` with logs for each test folder.
 
 ### Test Structure
 
 ```
 tests/
-├── conftest.py                    # Shared fixtures
-│   ├── workspace_client           # WorkspaceClient fixture
-│   ├── test_catalog               # Creates ai_dev_kit_test catalog
-│   ├── test_schema                # Creates fresh test_schema (drops if exists)
-│   ├── warehouse_id               # Gets best running warehouse
-│   └── test_tables                # Creates sample tables with data
+├── conftest.py                    # Shared fixtures (workspace_client, test_catalog, etc.)
+├── test_config.py                 # Test configuration (catalog names, prefixes)
 └── integration/
-    ├── sql/
-    │   ├── test_warehouse.py      # Warehouse listing tests
-    │   ├── test_sql.py            # SQL execution tests
-    │   └── test_table_stats.py    # Table statistics tests
-    └── jobs/
-        ├── conftest.py            # Jobs-specific fixtures (test notebook, cleanup)
-        ├── test_jobs.py           # Job CRUD tests
-        └── test_runs.py           # Run operation tests
+    ├── run_tests.py               # Parallel test runner script
+    ├── agent_bricks/              # KA, MAS, Genie tests
+    ├── apps/                      # Databricks Apps tests
+    ├── compute/                   # Cluster and code execution tests
+    ├── dashboards/                # AI/BI dashboard tests
+    ├── genie/                     # Genie Space tests
+    ├── jobs/                      # Job and run tests
+    ├── lakebase/                  # Lakebase database tests
+    ├── pdf/                       # PDF generation tests
+    ├── pipelines/                 # SDP pipeline tests
+    ├── serving/                   # Model serving tests
+    ├── sql/                       # SQL execution tests
+    ├── vector_search/             # Vector search tests
+    ├── volume_files/              # Volume file operations
+    └── workspace_files/           # Workspace file operations
 ```
-
-### Test Coverage
-
-| Test File | Coverage |
-|-----------|----------|
-| `test_warehouse.py` | `list_warehouses`, `get_best_warehouse` |
-| `test_sql.py` | `execute_sql`, `execute_sql_multi`, error handling, parallel execution |
-| `test_table_stats.py` | `get_table_stats_and_schema`, all stat levels, glob patterns, caching |
-| `test_jobs.py` | `list_jobs`, `find_job_by_name`, `create_job`, `get_job`, `update_job`, `delete_job` |
-| `test_runs.py` | `run_job_now`, `get_run`, `cancel_run`, `list_runs`, `wait_for_run` |
 
 ### Test Fixtures
 
 The test suite uses session-scoped fixtures to minimize setup overhead:
 
+- **`workspace_client`**: WorkspaceClient with configured authentication
 - **`test_catalog`**: Creates `ai_dev_kit_test` catalog (reuses if exists)
-- **`test_schema`**: Drops and recreates `test_schema` for clean state
-- **`test_tables`**: Creates `customers`, `orders`, `products` tables with sample data
+- **`warehouse_id`**: Gets best running SQL warehouse
+- **Module-scoped schemas**: Each test module gets its own schema for isolation
 
 ## Development
 

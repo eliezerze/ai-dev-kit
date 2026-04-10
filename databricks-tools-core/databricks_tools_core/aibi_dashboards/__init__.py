@@ -35,6 +35,11 @@ from .models import (
     DashboardDeploymentResult,
 )
 
+# High-level API (used by MCP and CLI)
+from .aibi_dashboards_api import (
+    manage_dashboard as api_manage_dashboard,
+)
+
 __all__ = [
     # CRUD operations
     "create_dashboard",
@@ -51,4 +56,6 @@ __all__ = [
     "deploy_dashboard",
     # Models
     "DashboardDeploymentResult",
+    # High-level API
+    "api_manage_dashboard",
 ]

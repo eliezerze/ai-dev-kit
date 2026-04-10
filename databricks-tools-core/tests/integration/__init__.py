@@ -1,1 +1,1 @@
-"""Integration tests requiring Databricks connection."""
+# Integration tests for databricks-mcp-server

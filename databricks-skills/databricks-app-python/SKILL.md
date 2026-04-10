@@ -202,6 +202,30 @@ class EntityIn(BaseModel):
 - **[app.yaml Reference](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/app-runtime)** — command and env config
 - **[System Environment](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/system-env)** — pre-installed packages, runtime details
 
+---
+
+## CLI Quick Reference (aidevkit CLI)
+
+```bash
+# Create or update an app
+aidevkit apps create-or-update --name my-app \
+    --source-code-path /Volumes/catalog/schema/volume/app \
+    --description "My data dashboard"
+
+# Get app details (including deployment logs)
+aidevkit apps get --name my-app
+aidevkit apps get --name my-app --logs
+
+# List all apps
+aidevkit apps list
+aidevkit apps list --filter "dashboard"
+
+# Delete app
+aidevkit apps delete --name my-app
+```
+
+---
+
 ## Related Skills
 
 - **[databricks-app-apx](../databricks-app-apx/SKILL.md)** - full-stack apps with FastAPI + React

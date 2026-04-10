@@ -5,15 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from databricks_mcp_server.tools.workspace import _manage_workspace_impl as manage_workspace
+from databricks_tools_core.workspace_workflows import manage_workspace as manage_workspace
 from databricks_tools_core.auth import clear_active_workspace, get_active_workspace
 
-# Patch targets
-_CFG_PATH = "databricks_mcp_server.tools.workspace._DATABRICKS_CFG_PATH"
-_VALIDATE_AND_SWITCH = "databricks_mcp_server.tools.workspace._validate_and_switch"
-_GET_WORKSPACE_CLIENT = "databricks_mcp_server.tools.workspace.get_workspace_client"
-_GET_ACTIVE_WORKSPACE = "databricks_mcp_server.tools.workspace.get_active_workspace"
-_SUBPROCESS_RUN = "databricks_mcp_server.tools.workspace.subprocess.run"
+# Patch targets - now pointing to workflows module
+_CFG_PATH = "databricks_tools_core.workspace_workflows._DATABRICKS_CFG_PATH"
+_VALIDATE_AND_SWITCH = "databricks_tools_core.workspace_workflows._validate_and_switch"
+_GET_WORKSPACE_CLIENT = "databricks_tools_core.workspace_workflows.get_workspace_client"
+_GET_ACTIVE_WORKSPACE = "databricks_tools_core.workspace_workflows.get_active_workspace"
+_SUBPROCESS_RUN = "databricks_tools_core.workspace_workflows.subprocess.run"
 
 
 @pytest.fixture(autouse=True)

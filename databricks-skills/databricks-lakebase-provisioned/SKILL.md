@@ -221,76 +221,12 @@ mlflow.langchain.log_model(
 )
 ```
 
-## MCP Tools
-
-The following MCP tools are available for managing Lakebase infrastructure. Use `type="provisioned"` for Lakebase Provisioned.
-
-### manage_lakebase_database - Database Management
-
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `create_or_update` | Create or update a database | name |
-| `get` | Get database details | name |
-| `list` | List all databases | (none, optional type filter) |
-| `delete` | Delete database and resources | name |
-
-**Example usage:**
-```python
-# Create a provisioned database
-manage_lakebase_database(
-    action="create_or_update",
-    name="my-lakebase-instance",
-    type="provisioned",
-    capacity="CU_1"
-)
-
-# Get database details
-manage_lakebase_database(action="get", name="my-lakebase-instance", type="provisioned")
-
-# List all databases
-manage_lakebase_database(action="list")
-
-# Delete with cascade
-manage_lakebase_database(action="delete", name="my-lakebase-instance", type="provisioned", force=True)
-```
-
-### manage_lakebase_sync - Reverse ETL
-
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `create_or_update` | Set up reverse ETL from Delta to Lakebase | instance_name, source_table_name, target_table_name |
-| `delete` | Remove synced table (and optionally catalog) | table_name |
-
-**Example usage:**
-```python
-# Set up reverse ETL
-manage_lakebase_sync(
-    action="create_or_update",
-    instance_name="my-lakebase-instance",
-    source_table_name="catalog.schema.delta_table",
-    target_table_name="lakebase_catalog.schema.postgres_table",
-    scheduling_policy="TRIGGERED"  # or SNAPSHOT, CONTINUOUS
-)
-
-# Delete synced table
-manage_lakebase_sync(action="delete", table_name="lakebase_catalog.schema.postgres_table")
-```
-
-### generate_lakebase_credential - OAuth Tokens
-
-Generate OAuth token (~1hr) for PostgreSQL connections. Use as password with `sslmode=require`.
-
-```python
-# For provisioned instances
-generate_lakebase_credential(instance_names=["my-lakebase-instance"])
-```
-
 ## Reference Files
 
 - [connection-patterns.md](connection-patterns.md) - Detailed connection patterns for different use cases
 - [reverse-etl.md](reverse-etl.md) - Syncing data from Delta Lake to Lakebase
 
-## CLI Quick Reference
+## CLI Quick Reference (Databricks CLI)
 
 ```bash
 # Create instance
@@ -314,6 +250,26 @@ databricks database stop-database-instance --name my-lakebase-instance
 
 # Start instance
 databricks database start-database-instance --name my-lakebase-instance
+```
+
+## CLI Quick Reference (aidevkit CLI)
+
+```bash
+# Create a provisioned instance
+aidevkit lakebase database create-or-update --name my-lakebase-instance \
+    --catalog my_catalog --schema my_schema --type provisioned --capacity 1
+
+# Get instance details
+aidevkit lakebase database get --name my-lakebase-instance --type provisioned
+
+# List all provisioned instances
+aidevkit lakebase database list --type provisioned
+
+# Delete instance
+aidevkit lakebase database delete --name my-lakebase-instance --type provisioned
+
+# Generate OAuth credential
+aidevkit lakebase credential --name my-lakebase-instance --type provisioned
 ```
 
 ## Common Issues

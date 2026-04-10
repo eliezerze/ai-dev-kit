@@ -3,13 +3,13 @@
 Consolidated into 1 tool:
 - manage_volume_files: list, upload, download, delete, mkdir, get_info
 
-This module is a thin wrapper around databricks_tools_core.unity_catalog.workflows.
+This module is a thin wrapper around databricks_tools_core.unity_catalog.unity_catalog_api.
 All business logic lives in the workflows module.
 """
 
 from typing import Dict, Any, Optional
 
-from databricks_tools_core.unity_catalog.workflows import manage_volume_files as _manage_volume_files
+from databricks_tools_core.unity_catalog.unity_catalog_api import manage_volume_files as _manage_volume_files
 
 from ..server import mcp
 
