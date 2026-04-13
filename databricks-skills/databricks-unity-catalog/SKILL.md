@@ -29,15 +29,21 @@ Use this skill when:
 
 ## Quick Start
 
-### Volume File Operations (MCP Tools)
+### Volume File Operations (CLI)
 
-| Tool | Usage |
-|------|-------|
-| `list_volume_files` | `list_volume_files(volume_path="/Volumes/catalog/schema/volume/path/")` |
-| `get_volume_folder_details` | `get_volume_folder_details(volume_path="catalog/schema/volume/path", format="parquet")` - schema, row counts, stats |
-| `upload_to_volume` | `upload_to_volume(local_path="/tmp/data/*", volume_path="/Volumes/.../dest")` |
-| `download_from_volume` | `download_from_volume(volume_path="/Volumes/.../file.csv", local_path="/tmp/file.csv")` |
-| `create_volume_directory` | `create_volume_directory(volume_path="/Volumes/.../new_folder")` |
+```bash
+# List files in a volume
+databricks fs ls /Volumes/catalog/schema/volume/path/
+
+# Upload files to a volume
+databricks fs cp /tmp/data/* /Volumes/catalog/schema/volume/dest/ --recursive
+
+# Download files from a volume
+databricks fs cp /Volumes/catalog/schema/volume/file.csv /tmp/file.csv
+
+# Create a directory in a volume
+databricks fs mkdirs /Volumes/catalog/schema/volume/new_folder
+```
 
 ### Enable System Tables Access
 
@@ -71,20 +77,17 @@ WHERE usage_date >= current_date() - 30
 GROUP BY workspace_id, sku_name;
 ```
 
-## MCP Tool Integration
+## SQL Queries via CLI
 
-Use `mcp__databricks__execute_sql` for system table queries:
+Use `databricks sql` for system table queries:
 
-```python
-# Query lineage
-mcp__databricks__execute_sql(
-    sql_query="""
-        SELECT source_table_full_name, target_table_full_name
-        FROM system.access.table_lineage
-        WHERE event_date >= current_date() - 7
-    """,
-    catalog="system"
-)
+```bash
+# Query lineage via CLI
+databricks sql execute --warehouse-id WAREHOUSE_ID --query "
+  SELECT source_table_full_name, target_table_full_name
+  FROM system.access.table_lineage
+  WHERE event_date >= current_date() - 7
+"
 ```
 
 ## Best Practices
