@@ -9,19 +9,23 @@ Convert HTML content to PDF documents and upload them to Unity Catalog Volumes.
 
 ## Overview
 
-The `generate_and_upload_pdf` MCP tool converts HTML to PDF and uploads to a Unity Catalog Volume. You (the LLM) generate the HTML content, and the tool handles conversion and upload.
+Generate PDFs from HTML using the `databricks-tools-core` library. You (the LLM) generate the HTML content, and the Python script handles conversion and upload.
 
-## Tool Signature
+## Python Script Pattern
 
-```
-generate_and_upload_pdf(
-    html_content: str,      # Complete HTML document
-    filename: str,          # PDF filename (e.g., "report.pdf")
-    catalog: str,           # Unity Catalog name
-    schema: str,            # Schema name
-    volume: str = "raw_data",  # Volume name (default: "raw_data")
-    folder: str = None,     # Optional subfolder
+```python
+# generate_pdf.py
+from databricks_tools_core.pdf_generator import generate_and_upload_pdf
+
+result = generate_and_upload_pdf(
+    html_content=html_content,  # Complete HTML document
+    filename="report.pdf",       # PDF filename
+    catalog="my_catalog",        # Unity Catalog name
+    schema="my_schema",          # Schema name
+    volume="raw_data",           # Volume name (default: "raw_data")
+    folder=None,                 # Optional subfolder
 )
+print(f"Uploaded to: {result['volume_path']}")
 ```
 
 **Returns:**
@@ -37,7 +41,9 @@ generate_and_upload_pdf(
 
 Generate a simple PDF:
 
-```
+```python
+from databricks_tools_core.pdf_generator import generate_and_upload_pdf
+
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
 <html>
@@ -64,47 +70,37 @@ generate_and_upload_pdf(
 
 ## Performance: Generate Multiple PDFs in Parallel
 
-**IMPORTANT**: PDF generation and upload can take 2-5 seconds per document. When generating multiple PDFs, **call the tool in parallel** to maximize throughput.
+**IMPORTANT**: PDF generation and upload can take 2-5 seconds per document. When generating multiple PDFs, use concurrent execution to maximize throughput.
 
 ### Example: Generate 5 PDFs in Parallel
 
-Make 5 simultaneous `generate_and_upload_pdf` calls:
+```python
+import concurrent.futures
+from databricks_tools_core.pdf_generator import generate_and_upload_pdf
 
-```
-# Call 1
-generate_and_upload_pdf(
-    html_content="<html>...Employee Handbook content...</html>",
-    filename="employee_handbook.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+pdfs_to_generate = [
+    {"html_content": "<html>...Employee Handbook content...</html>", "filename": "employee_handbook.pdf"},
+    {"html_content": "<html>...Leave Policy content...</html>", "filename": "leave_policy.pdf"},
+    {"html_content": "<html>...Code of Conduct content...</html>", "filename": "code_of_conduct.pdf"},
+    {"html_content": "<html>...Benefits Guide content...</html>", "filename": "benefits_guide.pdf"},
+    {"html_content": "<html>...Remote Work Policy content...</html>", "filename": "remote_work_policy.pdf"},
+]
 
-# Call 2 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Leave Policy content...</html>",
-    filename="leave_policy.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+def generate_pdf(pdf_config):
+    return generate_and_upload_pdf(
+        html_content=pdf_config["html_content"],
+        filename=pdf_config["filename"],
+        catalog="hr_catalog",
+        schema="policies",
+        folder="2024"
+    )
 
-# Call 3 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Code of Conduct content...</html>",
-    filename="code_of_conduct.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+# Generate in parallel
+with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    results = list(executor.map(generate_pdf, pdfs_to_generate))
 
-# Call 4 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Benefits Guide content...</html>",
-    filename="benefits_guide.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
-
-# Call 5 (parallel)
-generate_and_upload_pdf(
-    html_content="<html>...Remote Work Policy content...</html>",
-    filename="remote_work_policy.pdf",
-    catalog="hr_catalog", schema="policies", folder="2024"
-)
+for result in results:
+    print(f"Uploaded: {result['volume_path']}")
 ```
 
 By calling these in parallel (not sequentially), 5 PDFs that would take 15-25 seconds sequentially complete in 3-5 seconds total.
