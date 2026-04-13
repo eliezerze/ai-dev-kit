@@ -2,7 +2,7 @@
 Integration tests for databricks-agent-bricks/mas_manager.py
 
 Tests the Supervisor Agent (MAS) CLI interface functions.
-Requires databricks-tools-core.agent_bricks module.
+The mas_manager.py is self-contained - requires only databricks-sdk and requests.
 """
 
 import json

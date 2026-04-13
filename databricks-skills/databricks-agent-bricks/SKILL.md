@@ -105,7 +105,14 @@ See `databricks-genie` skill for:
 
 ### Supervisor Agent (MAS)
 
-**NO CLI AVAILABLE** - Supervisor Agents are managed via the `mas_manager.py` script in this skill folder:
+**NO CLI AVAILABLE** - Supervisor Agents are managed via the self-contained `mas_manager.py` script in this skill folder.
+
+Install requirements first:
+```bash
+pip install databricks-sdk requests
+```
+
+Usage:
 
 ```bash
 # List all Supervisor Agents

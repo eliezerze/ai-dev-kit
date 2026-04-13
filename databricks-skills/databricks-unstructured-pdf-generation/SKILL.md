@@ -9,25 +9,25 @@ Convert HTML content to PDF documents and upload them to Unity Catalog Volumes.
 
 ## Overview
 
-Generate PDFs from HTML using the `databricks-tools-core` library. You (the LLM) generate the HTML content, and the Python script handles conversion and upload.
+Generate PDFs from HTML using the self-contained `pdf_generator.py` script. You (the LLM) generate the HTML content, and the Python script handles conversion and upload using the Databricks CLI.
 
 ## Installation
 
-Install the `databricks-tools-core` library before using PDF generation:
+Install plutoprint for HTML to PDF conversion:
 
 ```bash
 # Preferred: use uv for faster installation
-uv pip install databricks-tools-core
+uv pip install plutoprint
 
 # Fallback: use pip if uv is not available
-pip install databricks-tools-core
+pip install plutoprint
 ```
 
 ## Python Script Pattern
 
 ```python
-# generate_pdf.py
-from databricks_tools_core.pdf_generator import generate_and_upload_pdf
+# Import from the skill's pdf_generator.py
+from pdf_generator import generate_and_upload_pdf
 
 result = generate_and_upload_pdf(
     html_content=html_content,  # Complete HTML document
@@ -37,7 +37,7 @@ result = generate_and_upload_pdf(
     volume="raw_data",           # Volume name (default: "raw_data")
     folder=None,                 # Optional subfolder
 )
-print(f"Uploaded to: {result['volume_path']}")
+print(f"Uploaded to: {result.volume_path}")
 ```
 
 **Returns:**
@@ -49,12 +49,30 @@ print(f"Uploaded to: {result['volume_path']}")
 }
 ```
 
+## CLI Usage
+
+The script can also be run directly from command line:
+
+```bash
+# Generate from inline HTML
+python pdf_generator.py generate --html '<html><body><h1>Hello</h1></body></html>' \
+    --filename hello.pdf --catalog my_catalog --schema my_schema
+
+# Generate from HTML file
+python pdf_generator.py generate --html-file input.html \
+    --filename report.pdf --catalog my_catalog --schema my_schema --folder reports
+
+# Get JSON output
+python pdf_generator.py generate --html '...' --filename test.pdf \
+    --catalog my_catalog --schema my_schema --json
+```
+
 ## Quick Start
 
 Generate a simple PDF:
 
 ```python
-from databricks_tools_core.pdf_generator import generate_and_upload_pdf
+from pdf_generator import generate_and_upload_pdf
 
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
@@ -88,7 +106,7 @@ generate_and_upload_pdf(
 
 ```python
 import concurrent.futures
-from databricks_tools_core.pdf_generator import generate_and_upload_pdf
+from pdf_generator import generate_and_upload_pdf
 
 pdfs_to_generate = [
     {"html_content": "<html>...Employee Handbook content...</html>", "filename": "employee_handbook.pdf"},
@@ -112,7 +130,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
     results = list(executor.map(generate_pdf, pdfs_to_generate))
 
 for result in results:
-    print(f"Uploaded: {result['volume_path']}")
+    print(f"Uploaded: {result.volume_path}")
 ```
 
 By calling these in parallel (not sequentially), 5 PDFs that would take 15-25 seconds sequentially complete in 3-5 seconds total.
@@ -231,7 +249,9 @@ PlutoPrint supports modern CSS3:
 
 Generate API documentation, user guides, or technical specs:
 
-```
+```python
+from pdf_generator import generate_and_upload_pdf
+
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
 <html>
@@ -260,7 +280,9 @@ Content-Type: application/json</pre>
 
 ### Pattern 2: Business Reports
 
-```
+```python
+from pdf_generator import generate_and_upload_pdf
+
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
 <html>
@@ -291,7 +313,9 @@ generate_and_upload_pdf(
 
 ### Pattern 3: HR Policies
 
-```
+```python
+from pdf_generator import generate_and_upload_pdf
+
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
 <html>
@@ -334,6 +358,7 @@ When asked to generate multiple PDFs:
 - Unity Catalog schema must exist
 - Volume must exist (default: `raw_data`)
 - User must have WRITE permission on the volume
+- Databricks CLI must be configured and authenticated
 
 ## Troubleshooting
 
@@ -343,3 +368,4 @@ When asked to generate multiple PDFs:
 | "Schema does not exist" | Create the schema or check the name |
 | PDF looks wrong | Check HTML/CSS syntax, use supported CSS features |
 | Slow generation | Call multiple PDFs in parallel, not sequentially |
+| CLI not found | Ensure `databricks` CLI is installed and in PATH |

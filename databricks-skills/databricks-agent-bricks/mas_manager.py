@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Supervisor Agent (MAS) Manager - CLI interface for MAS operations.
+Supervisor Agent (MAS) Manager - Self-contained CLI for MAS operations.
 
 Usage:
     python mas_manager.py create_mas "Name" '{"agents": [...], "description": "...", "instructions": "..."}'
@@ -13,23 +13,380 @@ Usage:
     python mas_manager.py add_examples_queued TILE_ID '[{"question": "...", "guideline": "..."}]'
     python mas_manager.py list_examples TILE_ID
 
-Requires: databricks-tools-core package
+Requires: databricks-sdk, requests
+    pip install databricks-sdk requests
 """
 
 import json
+import logging
+import re
 import sys
-from typing import Any, Dict, List, Optional
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
-from databricks_tools_core.agent_bricks import (
-    AgentBricksManager,
-    EndpointStatus,
-    get_tile_example_queue,
-)
+import requests
+from databricks.sdk import WorkspaceClient
+
+logger = logging.getLogger(__name__)
 
 
-def _get_manager() -> AgentBricksManager:
-    """Get AgentBricksManager instance."""
-    return AgentBricksManager()
+# ============================================================================
+# Models
+# ============================================================================
+
+
+class TileType(Enum):
+    """Tile types."""
+    UNSPECIFIED = 0
+    KIE = 1
+    T2T = 2
+    KA = 3
+    MAO = 4
+    MAS = 5
+
+
+class EndpointStatus(Enum):
+    """Endpoint status values."""
+    ONLINE = "ONLINE"
+    OFFLINE = "OFFLINE"
+    PROVISIONING = "PROVISIONING"
+    NOT_READY = "NOT_READY"
+
+
+@dataclass(frozen=True)
+class MASIds:
+    """Supervisor Agent identifiers."""
+    tile_id: str
+    name: str
+
+
+# ============================================================================
+# MAS Manager Class
+# ============================================================================
+
+
+class MASManager:
+    """Manager for Supervisor Agent (MAS) operations.
+
+    Uses raw HTTP API calls since there's no CLI for MAS operations.
+    Authentication is handled via databricks-sdk WorkspaceClient.
+    """
+
+    def __init__(self, client: Optional[WorkspaceClient] = None):
+        """Initialize the MAS Manager.
+
+        Args:
+            client: Optional WorkspaceClient (creates new one if not provided)
+        """
+        self.w: WorkspaceClient = client or WorkspaceClient()
+
+    @staticmethod
+    def sanitize_name(name: str) -> str:
+        """Sanitize a name to ensure it's alphanumeric with only hyphens and underscores."""
+        sanitized = name.replace(" ", "_")
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", sanitized)
+        sanitized = re.sub(r"[_-]{2,}", "_", sanitized)
+        sanitized = sanitized.strip("_-")
+        if not sanitized:
+            sanitized = "supervisor_agent"
+        return sanitized
+
+    # ========================================================================
+    # MAS CRUD Operations
+    # ========================================================================
+
+    def create(
+        self,
+        name: str,
+        agents: List[Dict[str, Any]],
+        description: Optional[str] = None,
+        instructions: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a Supervisor Agent with specified agents."""
+        payload = {"name": self.sanitize_name(name), "agents": agents}
+        if description:
+            payload["description"] = description
+        if instructions:
+            payload["instructions"] = instructions
+        return self._post("/api/2.0/multi-agent-supervisors", payload)
+
+    def get(self, tile_id: str) -> Optional[Dict[str, Any]]:
+        """Get MAS by tile_id."""
+        try:
+            return self._get(f"/api/2.0/multi-agent-supervisors/{tile_id}")
+        except Exception as e:
+            if "does not exist" in str(e).lower() or "not found" in str(e).lower():
+                return None
+            raise
+
+    def update(
+        self,
+        tile_id: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        instructions: Optional[str] = None,
+        agents: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Update a Supervisor Agent."""
+        payload = {"tile_id": tile_id}
+        if name:
+            payload["name"] = self.sanitize_name(name)
+        if description:
+            payload["description"] = description
+        if instructions:
+            payload["instructions"] = instructions
+        if agents:
+            payload["agents"] = agents
+        return self._patch(f"/api/2.0/multi-agent-supervisors/{tile_id}", payload)
+
+    def delete(self, tile_id: str) -> None:
+        """Delete a Supervisor Agent."""
+        self._delete(f"/api/2.0/tiles/{tile_id}")
+
+    def find_by_name(self, name: str) -> Optional[MASIds]:
+        """Find a MAS by exact display name."""
+        sanitized_name = self.sanitize_name(name)
+        filter_q = f"name_contains={sanitized_name}&&tile_type=MAS"
+        page_token = None
+        while True:
+            params = {"filter": filter_q}
+            if page_token:
+                params["page_token"] = page_token
+            resp = self._get("/api/2.0/tiles", params=params)
+            for t in resp.get("tiles", []):
+                if t.get("name") == sanitized_name:
+                    return MASIds(tile_id=t["tile_id"], name=sanitized_name)
+            page_token = resp.get("next_page_token")
+            if not page_token:
+                break
+        return None
+
+    def list_all(self, page_size: int = 100) -> List[Dict[str, Any]]:
+        """List all Supervisor Agents."""
+        all_tiles = []
+        filter_q = "tile_type=MAS"
+        page_token = None
+
+        while True:
+            params = {"page_size": page_size, "filter": filter_q}
+            if page_token:
+                params["page_token"] = page_token
+
+            resp = self._get("/api/2.0/tiles", params=params)
+            for tile in resp.get("tiles", []):
+                tile_type = tile.get("tile_type")
+                if tile_type in ("MAS", "5"):
+                    all_tiles.append(tile)
+
+            page_token = resp.get("next_page_token")
+            if not page_token:
+                break
+
+        return all_tiles
+
+    def get_endpoint_status(self, tile_id: str) -> Optional[str]:
+        """Get the endpoint status of a MAS."""
+        mas = self.get(tile_id)
+        if not mas:
+            return None
+        return mas.get("multi_agent_supervisor", {}).get("status", {}).get("endpoint_status")
+
+    # ========================================================================
+    # Examples Management
+    # ========================================================================
+
+    def create_example(self, tile_id: str, question: str, guidelines: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Create an example question for the MAS."""
+        payload = {"tile_id": tile_id, "question": question}
+        if guidelines:
+            payload["guidelines"] = guidelines
+        return self._post(f"/api/2.0/multi-agent-supervisors/{tile_id}/examples", payload)
+
+    def list_examples(self, tile_id: str, page_size: int = 100) -> Dict[str, Any]:
+        """List all examples for a MAS."""
+        return self._get(f"/api/2.0/multi-agent-supervisors/{tile_id}/examples", params={"page_size": page_size})
+
+    def delete_example(self, tile_id: str, example_id: str) -> None:
+        """Delete an example from the MAS."""
+        self._delete(f"/api/2.0/multi-agent-supervisors/{tile_id}/examples/{example_id}")
+
+    def add_examples_batch(self, tile_id: str, questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Add multiple example questions in parallel."""
+        created_examples = []
+
+        def create_example(q: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            question_text = q.get("question", "")
+            guidelines = q.get("guideline")
+            if guidelines and isinstance(guidelines, str):
+                guidelines = [guidelines]
+
+            if not question_text:
+                return None
+            try:
+                return self.create_example(tile_id, question_text, guidelines)
+            except Exception as e:
+                logger.error(f"Failed to add MAS example '{question_text[:50]}...': {e}")
+                return None
+
+        max_workers = min(2, len(questions))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_q = {executor.submit(create_example, q): q for q in questions}
+            for future in as_completed(future_to_q):
+                result = future.result()
+                if result:
+                    created_examples.append(result)
+
+        return created_examples
+
+    # ========================================================================
+    # HTTP Helpers
+    # ========================================================================
+
+    def _handle_response_error(self, response: requests.Response, method: str, path: str) -> None:
+        """Extract detailed error from response and raise."""
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                error_msg = error_data.get("message", error_data.get("error", str(error_data)))
+                raise Exception(f"{method} {path} failed: {error_msg}")
+            except ValueError:
+                raise Exception(f"{method} {path} failed with status {response.status_code}: {response.text}")
+
+    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        headers = self.w.config.authenticate()
+        url = f"{self.w.config.host}{path}"
+        response = requests.get(url, headers=headers, params=params or {}, timeout=20)
+        self._handle_response_error(response, "GET", path)
+        return response.json()
+
+    def _post(self, path: str, body: Dict[str, Any], timeout: int = 300) -> Dict[str, Any]:
+        headers = self.w.config.authenticate()
+        headers["Content-Type"] = "application/json"
+        url = f"{self.w.config.host}{path}"
+        response = requests.post(url, headers=headers, json=body, timeout=timeout)
+        self._handle_response_error(response, "POST", path)
+        return response.json()
+
+    def _patch(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        headers = self.w.config.authenticate()
+        headers["Content-Type"] = "application/json"
+        url = f"{self.w.config.host}{path}"
+        response = requests.patch(url, headers=headers, json=body, timeout=20)
+        self._handle_response_error(response, "PATCH", path)
+        return response.json()
+
+    def _delete(self, path: str) -> Dict[str, Any]:
+        headers = self.w.config.authenticate()
+        url = f"{self.w.config.host}{path}"
+        response = requests.delete(url, headers=headers, timeout=20)
+        self._handle_response_error(response, "DELETE", path)
+        return response.json()
+
+
+# ============================================================================
+# Example Queue (for adding examples when MAS becomes ONLINE)
+# ============================================================================
+
+
+class TileExampleQueue:
+    """Background queue for adding examples to tiles that aren't ready yet."""
+
+    def __init__(self, poll_interval: float = 30.0, max_attempts: int = 120):
+        self.queue: Dict[str, Tuple[MASManager, List[Dict[str, Any]], float, int]] = {}
+        self.lock = threading.Lock()
+        self.running = False
+        self.thread: Optional[threading.Thread] = None
+        self.poll_interval = poll_interval
+        self.max_attempts = max_attempts
+
+    def enqueue(self, tile_id: str, manager: MASManager, questions: List[Dict[str, Any]]) -> None:
+        """Add a tile and its questions to the processing queue."""
+        with self.lock:
+            self.queue[tile_id] = (manager, questions, time.time(), 0)
+            logger.info(f"Enqueued {len(questions)} examples for MAS {tile_id}")
+
+        if not self.running:
+            self.start()
+
+    def start(self) -> None:
+        """Start the background processing thread."""
+        if not self.running:
+            self.running = True
+            self.thread = threading.Thread(target=self._process_loop, daemon=True)
+            self.thread.start()
+
+    def stop(self) -> None:
+        """Stop the background processing thread."""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=5)
+
+    def _process_loop(self) -> None:
+        """Background loop that checks tile status and adds examples when ready."""
+        while self.running:
+            try:
+                with self.lock:
+                    items_to_process = list(self.queue.items())
+
+                for tile_id, (manager, questions, enqueue_time, attempt_count) in items_to_process:
+                    try:
+                        if attempt_count >= self.max_attempts:
+                            logger.error(f"MAS {tile_id} exceeded max attempts. Removing from queue.")
+                            with self.lock:
+                                self.queue.pop(tile_id, None)
+                            continue
+
+                        with self.lock:
+                            if tile_id in self.queue:
+                                self.queue[tile_id] = (manager, questions, enqueue_time, attempt_count + 1)
+
+                        status = manager.get_endpoint_status(tile_id)
+
+                        if status == EndpointStatus.ONLINE.value:
+                            logger.info(f"MAS {tile_id} is ONLINE, adding {len(questions)} examples...")
+                            created = manager.add_examples_batch(tile_id, questions)
+                            logger.info(f"Added {len(created)} examples to MAS {tile_id}")
+                            with self.lock:
+                                self.queue.pop(tile_id, None)
+
+                    except Exception as e:
+                        logger.error(f"Error processing MAS {tile_id}: {e}")
+                        with self.lock:
+                            self.queue.pop(tile_id, None)
+
+            except Exception as e:
+                logger.error(f"Error in queue processor: {e}")
+
+            time.sleep(self.poll_interval)
+
+
+# Global singleton queue instance
+_tile_example_queue: Optional[TileExampleQueue] = None
+_queue_lock = threading.Lock()
+
+
+def get_tile_example_queue() -> TileExampleQueue:
+    """Get or create the global tile example queue instance."""
+    global _tile_example_queue
+    if _tile_example_queue is None:
+        with _queue_lock:
+            if _tile_example_queue is None:
+                _tile_example_queue = TileExampleQueue()
+    return _tile_example_queue
+
+
+# ============================================================================
+# CLI Functions
+# ============================================================================
+
+
+def _get_manager() -> MASManager:
+    """Get MASManager instance."""
+    return MASManager()
 
 
 def _build_agent_list(agents: List[Dict[str, str]]) -> List[Dict[str, Any]]:
@@ -80,24 +437,11 @@ def create_mas(
     description: str = None,
     instructions: str = None,
 ) -> Dict[str, Any]:
-    """Create a new Supervisor Agent.
-
-    Args:
-        name: Display name for the MAS
-        agents: List of agent configs, each with:
-            - name: Agent identifier
-            - description: What this agent handles (critical for routing)
-            - ONE OF: endpoint_name, genie_space_id, ka_tile_id, uc_function_name, connection_name
-        description: What this MAS does
-        instructions: Routing rules for the supervisor
-
-    Returns:
-        Dict with tile_id, name, endpoint_status
-    """
+    """Create a new Supervisor Agent."""
     manager = _get_manager()
     agent_list = _build_agent_list(agents)
 
-    result = manager.mas_create(
+    result = manager.create(
         name=name,
         agents=agent_list,
         description=description,
@@ -117,16 +461,9 @@ def create_mas(
 
 
 def get_mas(tile_id: str) -> Dict[str, Any]:
-    """Get a Supervisor Agent by tile ID.
-
-    Args:
-        tile_id: The MAS tile ID
-
-    Returns:
-        Dict with tile_id, name, description, endpoint_status, agents, instructions
-    """
+    """Get a Supervisor Agent by tile ID."""
     manager = _get_manager()
-    result = manager.mas_get(tile_id)
+    result = manager.get(tile_id)
 
     if not result:
         return {"error": f"Supervisor Agent {tile_id} not found"}
@@ -146,21 +483,14 @@ def get_mas(tile_id: str) -> Dict[str, Any]:
 
 
 def find_mas(name: str) -> Dict[str, Any]:
-    """Find a Supervisor Agent by name.
-
-    Args:
-        name: The display name to search for
-
-    Returns:
-        Dict with found, tile_id, name, endpoint_status if found
-    """
+    """Find a Supervisor Agent by name."""
     manager = _get_manager()
-    result = manager.mas_find_by_name(name)
+    result = manager.find_by_name(name)
 
     if result is None:
         return {"found": False, "name": name}
 
-    full_details = manager.mas_get(result.tile_id)
+    full_details = manager.get(result.tile_id)
     if full_details:
         mas_data = full_details.get("multi_agent_supervisor", {})
         status_data = mas_data.get("status", {})
@@ -186,29 +516,16 @@ def update_mas(
     description: str = None,
     instructions: str = None,
 ) -> Dict[str, Any]:
-    """Update an existing Supervisor Agent.
-
-    Args:
-        tile_id: The MAS tile ID to update
-        name: New display name (optional)
-        agents: New agent list (optional)
-        description: New description (optional)
-        instructions: New routing instructions (optional)
-
-    Returns:
-        Dict with tile_id, name, endpoint_status
-    """
+    """Update an existing Supervisor Agent."""
     manager = _get_manager()
 
-    # Get existing to merge
-    existing = manager.mas_get(tile_id)
+    existing = manager.get(tile_id)
     if not existing:
         return {"error": f"Supervisor Agent {tile_id} not found"}
 
     mas_data = existing.get("multi_agent_supervisor", {})
     tile_data = mas_data.get("tile", {})
 
-    # Use existing values if not provided
     final_name = name or tile_data.get("name", "")
     final_description = description or tile_data.get("description", "")
     final_instructions = instructions or mas_data.get("instructions", "")
@@ -218,7 +535,7 @@ def update_mas(
     else:
         agent_list = mas_data.get("agents", [])
 
-    result = manager.mas_update(
+    result = manager.update(
         tile_id=tile_id,
         name=final_name,
         description=final_description,
@@ -238,14 +555,7 @@ def update_mas(
 
 
 def delete_mas(tile_id: str) -> Dict[str, Any]:
-    """Delete a Supervisor Agent.
-
-    Args:
-        tile_id: The MAS tile ID to delete
-
-    Returns:
-        Dict with success status
-    """
+    """Delete a Supervisor Agent."""
     manager = _get_manager()
     try:
         manager.delete(tile_id)
@@ -255,51 +565,32 @@ def delete_mas(tile_id: str) -> Dict[str, Any]:
 
 
 def list_mas() -> List[Dict[str, Any]]:
-    """List all Supervisor Agents.
-
-    Returns:
-        List of MAS summaries with tile_id, name, endpoint_status
-    """
+    """List all Supervisor Agents."""
     manager = _get_manager()
     results = []
 
-    # List all tiles and filter to MAS type
-    tiles = manager.list_tiles()
+    tiles = manager.list_all()
     for tile in tiles:
-        if tile.tile_type == "MULTI_AGENT_SUPERVISOR":
-            details = manager.mas_get(tile.tile_id)
-            if details:
-                mas_data = details.get("multi_agent_supervisor", {})
-                tile_data = mas_data.get("tile", {})
-                status_data = mas_data.get("status", {})
-                results.append({
-                    "tile_id": tile.tile_id,
-                    "name": tile_data.get("name", ""),
-                    "endpoint_status": status_data.get("endpoint_status", "UNKNOWN"),
-                    "agents_count": len(mas_data.get("agents", [])),
-                })
+        tile_id = tile.get("tile_id")
+        details = manager.get(tile_id)
+        if details:
+            mas_data = details.get("multi_agent_supervisor", {})
+            tile_data = mas_data.get("tile", {})
+            status_data = mas_data.get("status", {})
+            results.append({
+                "tile_id": tile_id,
+                "name": tile_data.get("name", ""),
+                "endpoint_status": status_data.get("endpoint_status", "UNKNOWN"),
+                "agents_count": len(mas_data.get("agents", [])),
+            })
 
     return results
 
 
-def add_examples(
-    tile_id: str,
-    examples: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Add example questions to a Supervisor Agent.
-
-    Args:
-        tile_id: The MAS tile ID
-        examples: List of example dicts with:
-            - question: The example question
-            - guideline: Optional routing guideline (e.g., "Should route to billing_agent")
-
-    Returns:
-        Dict with added_count and any errors
-    """
+def add_examples(tile_id: str, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Add example questions to a Supervisor Agent."""
     manager = _get_manager()
 
-    # Check if MAS is online
     status = get_mas(tile_id)
     if "error" in status:
         return status
@@ -311,8 +602,7 @@ def add_examples(
             "tile_id": tile_id,
         }
 
-    # Add examples directly
-    created = manager.mas_add_examples_batch(tile_id, examples)
+    created = manager.add_examples_batch(tile_id, examples)
     return {
         "tile_id": tile_id,
         "added_count": len(created),
@@ -320,34 +610,16 @@ def add_examples(
     }
 
 
-def add_examples_queued(
-    tile_id: str,
-    examples: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Queue example questions to be added when MAS becomes ONLINE.
-
-    If the MAS is already ONLINE, examples are added immediately.
-    If not, they're queued and added automatically when the endpoint is ready.
-
-    Args:
-        tile_id: The MAS tile ID
-        examples: List of example dicts with:
-            - question: The example question
-            - guideline: Optional routing guideline
-
-    Returns:
-        Dict with status (queued or added) and count
-    """
+def add_examples_queued(tile_id: str, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Queue example questions to be added when MAS becomes ONLINE."""
     manager = _get_manager()
 
-    # Check current status
     status = get_mas(tile_id)
     if "error" in status:
         return status
 
     if status.get("endpoint_status") == "ONLINE":
-        # Add immediately
-        created = manager.mas_add_examples_batch(tile_id, examples)
+        created = manager.add_examples_batch(tile_id, examples)
         return {
             "tile_id": tile_id,
             "status": "added",
@@ -355,10 +627,9 @@ def add_examples_queued(
             "total_requested": len(examples),
         }
     else:
-        # Queue for later
         queue = get_tile_example_queue()
         queue.start()
-        queue.enqueue(tile_id, manager, examples, tile_type="mas")
+        queue.enqueue(tile_id, manager, examples)
         return {
             "tile_id": tile_id,
             "status": "queued",
@@ -369,16 +640,9 @@ def add_examples_queued(
 
 
 def list_examples(tile_id: str) -> Dict[str, Any]:
-    """List all examples for a Supervisor Agent.
-
-    Args:
-        tile_id: The MAS tile ID
-
-    Returns:
-        Dict with examples list
-    """
+    """List all examples for a Supervisor Agent."""
     manager = _get_manager()
-    result = manager.mas_list_examples(tile_id)
+    result = manager.list_examples(tile_id)
     return {
         "tile_id": tile_id,
         "examples": result.get("examples", []),
