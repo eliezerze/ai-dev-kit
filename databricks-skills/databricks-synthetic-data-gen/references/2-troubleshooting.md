@@ -12,31 +12,16 @@ Common issues and solutions for synthetic data generation.
 
 | Mode | Solution |
 |------|----------|
-| **DB Connect 16.4+** | Use `DatabricksEnv().withDependencies("faker", "pandas", ...)` |
-| **Older DB Connect with Serverless** | Create job with `environments` parameter |
-| **Databricks Runtime** | Use Databricks CLI to  install `faker holidays` |
+| **DB Connect with Serverless** | Install libs locally (`uv pip install faker`), use `DatabricksSession.builder.serverless(True)` |
+| **Databricks Runtime** | Use Databricks CLI to install `faker holidays` |
 | **Classic cluster** | Use Databricks CLI to install libraries. `databricks libraries install --json '{"cluster_id": "<cluster_id>", "libraries": [{"pypi": {"package": "faker"}}, {"pypi": {"package": "holidays"}}]}'` |
 
 ```python
-# For DB Connect 16.4+
-from databricks.connect import DatabricksSession, DatabricksEnv
+# For DB Connect with serverless
+from databricks.connect import DatabricksSession
 
-env = DatabricksEnv().withDependencies("faker", "pandas", "numpy", "holidays")
-spark = DatabricksSession.builder.withEnvironment(env).serverless(True).getOrCreate()
-```
-
-### DatabricksEnv not found
-
-**Problem:** Using older databricks-connect version.
-
-**Solution:** Upgrade to 16.4+ or use job-based approach:
-
-```bash
-# Upgrade (prefer uv, fall back to pip)
-uv pip install "databricks-connect>=16.4,<17.4"
-# or: pip install "databricks-connect>=16.4,<17.4"
-
-# Or use job with environments parameter instead
+# Install dependencies locally first: uv pip install faker pandas numpy holidays
+spark = DatabricksSession.builder.serverless(True).getOrCreate()
 ```
 
 ### serverless_compute_id error
