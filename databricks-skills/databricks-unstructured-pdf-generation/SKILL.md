@@ -26,8 +26,8 @@ pip install plutoprint
 ## Python Script Pattern
 
 ```python
-# Import from the skill's pdf_generator.py
-from pdf_generator import generate_and_upload_pdf
+# Import from scripts/pdf_generator.py
+from scripts.pdf_generator import generate_and_upload_pdf
 
 result = generate_and_upload_pdf(
     html_content=html_content,  # Complete HTML document
@@ -72,7 +72,7 @@ python scripts/pdf_generator.py generate --html '...' --filename test.pdf \
 Generate a simple PDF:
 
 ```python
-from pdf_generator import generate_and_upload_pdf
+from scripts.pdf_generator import generate_and_upload_pdf
 
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
@@ -106,7 +106,7 @@ generate_and_upload_pdf(
 
 ```python
 import concurrent.futures
-from pdf_generator import generate_and_upload_pdf
+from scripts.pdf_generator import generate_and_upload_pdf
 
 pdfs_to_generate = [
     {"html_content": "<html>...Employee Handbook content...</html>", "filename": "employee_handbook.pdf"},
@@ -250,7 +250,7 @@ PlutoPrint supports modern CSS3:
 Generate API documentation, user guides, or technical specs:
 
 ```python
-from pdf_generator import generate_and_upload_pdf
+from scripts.pdf_generator import generate_and_upload_pdf
 
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
@@ -281,7 +281,7 @@ Content-Type: application/json</pre>
 ### Pattern 2: Business Reports
 
 ```python
-from pdf_generator import generate_and_upload_pdf
+from scripts.pdf_generator import generate_and_upload_pdf
 
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
@@ -314,7 +314,7 @@ generate_and_upload_pdf(
 ### Pattern 3: HR Policies
 
 ```python
-from pdf_generator import generate_and_upload_pdf
+from scripts.pdf_generator import generate_and_upload_pdf
 
 generate_and_upload_pdf(
     html_content='''<!DOCTYPE html>
