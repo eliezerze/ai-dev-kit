@@ -9,131 +9,65 @@ Convert HTML content to PDF documents and upload them to Unity Catalog Volumes.
 
 ## Overview
 
-Generate PDFs from HTML using the self-contained `scripts/pdf_generator.py` script. You (the LLM) generate the HTML content, and the Python script handles conversion and upload using the Databricks CLI.
+Generate PDFs from HTML using `scripts/pdf_generator.py`. You generate the HTML content, write it to a temp file, then run the script to convert and upload.
 
 ## Installation
 
-Install plutoprint for HTML to PDF conversion:
-
 ```bash
-# Preferred: use uv for faster installation
 uv pip install plutoprint
-
-# Fallback: use pip if uv is not available
-pip install plutoprint
 ```
 
-## Python Script Pattern
+## Usage
 
-```python
-# Import from scripts/pdf_generator.py
-from scripts.pdf_generator import generate_and_upload_pdf
-
-result = generate_and_upload_pdf(
-    html_content=html_content,  # Complete HTML document
-    filename="report.pdf",       # PDF filename
-    catalog="my_catalog",        # Unity Catalog name
-    schema="my_schema",          # Schema name
-    volume="raw_data",           # Volume name (default: "raw_data")
-    folder=None,                 # Optional subfolder
-)
-print(f"Uploaded to: {result.volume_path}")
-```
-
-**Returns:**
-```json
-{
-    "success": true,
-    "volume_path": "/Volumes/catalog/schema/volume/filename.pdf",
-    "error": null
-}
-```
-
-## CLI Usage
-
-The script can also be run directly from command line:
+Run the script via CLI:
 
 ```bash
-# Generate from inline HTML
+# Generate from HTML file (recommended - avoids shell escaping issues)
+python scripts/pdf_generator.py generate --html-file ./raw_pdf/content.html \
+    --filename report.pdf --catalog my_catalog --schema my_schema
+
+# Generate from inline HTML (for simple content)
 python scripts/pdf_generator.py generate --html '<html><body><h1>Hello</h1></body></html>' \
     --filename hello.pdf --catalog my_catalog --schema my_schema
 
-# Generate from HTML file
-python scripts/pdf_generator.py generate --html-file input.html \
-    --filename report.pdf --catalog my_catalog --schema my_schema --folder reports
-
-# Get JSON output
-python scripts/pdf_generator.py generate --html '...' --filename test.pdf \
-    --catalog my_catalog --schema my_schema --json
+# With subfolder and JSON output
+python scripts/pdf_generator.py generate --html-file ./raw_pdf/content.html \
+    --filename report.pdf --catalog my_catalog --schema my_schema --folder reports --json
 ```
+
+**Workflow:**
+1. Write HTML content to a local file (e.g., `./raw_pdf/content.html`)
+2. Run the script with `--html-file`
+3. Script converts to PDF and uploads to Unity Catalog volume
 
 ## Quick Start
 
-Generate a simple PDF:
+1. Write HTML to a local file
+2. Run the script
 
-```python
-from scripts.pdf_generator import generate_and_upload_pdf
-
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
+```bash
+# Create folder and write HTML content
+mkdir -p ./raw_pdf
+cat > ./raw_pdf/report.html << 'EOF'
+<!DOCTYPE html>
 <html>
 <head>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
-        h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; }
-        .section { margin: 20px 0; }
+        h1 { color: #1a73e8; }
     </style>
 </head>
 <body>
     <h1>Quarterly Report Q1 2024</h1>
-    <div class="section">
-        <h2>Executive Summary</h2>
-        <p>Revenue increased 15% year-over-year...</p>
-    </div>
+    <p>Revenue increased 15% year-over-year...</p>
 </body>
-</html>''',
-    filename="q1_report.pdf",
-    catalog="my_catalog",
-    schema="my_schema"
-)
+</html>
+EOF
+
+# Generate and upload PDF
+python scripts/pdf_generator.py generate --html-file ./raw_pdf/report.html \
+    --filename q1_report.pdf --catalog my_catalog --schema my_schema
 ```
-
-## Performance: Generate Multiple PDFs in Parallel
-
-**IMPORTANT**: PDF generation and upload can take 2-5 seconds per document. When generating multiple PDFs, use concurrent execution to maximize throughput.
-
-### Example: Generate 5 PDFs in Parallel
-
-```python
-import concurrent.futures
-from scripts.pdf_generator import generate_and_upload_pdf
-
-pdfs_to_generate = [
-    {"html_content": "<html>...Employee Handbook content...</html>", "filename": "employee_handbook.pdf"},
-    {"html_content": "<html>...Leave Policy content...</html>", "filename": "leave_policy.pdf"},
-    {"html_content": "<html>...Code of Conduct content...</html>", "filename": "code_of_conduct.pdf"},
-    {"html_content": "<html>...Benefits Guide content...</html>", "filename": "benefits_guide.pdf"},
-    {"html_content": "<html>...Remote Work Policy content...</html>", "filename": "remote_work_policy.pdf"},
-]
-
-def generate_pdf(pdf_config):
-    return generate_and_upload_pdf(
-        html_content=pdf_config["html_content"],
-        filename=pdf_config["filename"],
-        catalog="hr_catalog",
-        schema="policies",
-        folder="2024"
-    )
-
-# Generate in parallel
-with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-    results = list(executor.map(generate_pdf, pdfs_to_generate))
-
-for result in results:
-    print(f"Uploaded: {result.volume_path}")
-```
-
-By calling these in parallel (not sequentially), 5 PDFs that would take 15-25 seconds sequentially complete in 3-5 seconds total.
 
 ## HTML Best Practices
 
@@ -242,116 +176,6 @@ PlutoPrint supports modern CSS3:
 </body>
 </html>
 ```
-
-## Common Patterns
-
-### Pattern 1: Technical Documentation
-
-Generate API documentation, user guides, or technical specs:
-
-```python
-from scripts.pdf_generator import generate_and_upload_pdf
-
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
-<html>
-<head><style>
-    body { font-family: monospace; margin: 40px; }
-    code { background: #f4f4f4; padding: 2px 6px; }
-    pre { background: #f4f4f4; padding: 15px; overflow-x: auto; }
-    .endpoint { background: #e3f2fd; padding: 10px; margin: 10px 0; }
-</style></head>
-<body>
-    <h1>API Reference</h1>
-    <div class="endpoint">
-        <code>GET /api/v1/users</code>
-        <p>Returns a list of all users.</p>
-    </div>
-    <h2>Request Headers</h2>
-    <pre>Authorization: Bearer {token}
-Content-Type: application/json</pre>
-</body>
-</html>''',
-    filename="api_reference.pdf",
-    catalog="docs_catalog",
-    schema="api_docs"
-)
-```
-
-### Pattern 2: Business Reports
-
-```python
-from scripts.pdf_generator import generate_and_upload_pdf
-
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
-<html>
-<head><style>
-    body { font-family: Georgia, serif; margin: 50px; }
-    .metric { display: inline-block; text-align: center; margin: 20px; }
-    .metric-value { font-size: 2em; color: #1a73e8; }
-    .metric-label { color: #666; }
-</style></head>
-<body>
-    <h1>Q1 2024 Performance Report</h1>
-    <div class="metric">
-        <div class="metric-value">$2.4M</div>
-        <div class="metric-label">Revenue</div>
-    </div>
-    <div class="metric">
-        <div class="metric-value">+15%</div>
-        <div class="metric-label">Growth</div>
-    </div>
-</body>
-</html>''',
-    filename="q1_2024_report.pdf",
-    catalog="finance",
-    schema="reports",
-    folder="quarterly"
-)
-```
-
-### Pattern 3: HR Policies
-
-```python
-from scripts.pdf_generator import generate_and_upload_pdf
-
-generate_and_upload_pdf(
-    html_content='''<!DOCTYPE html>
-<html>
-<head><style>
-    body { font-family: Arial; margin: 40px; line-height: 1.8; }
-    .policy-section { margin: 30px 0; }
-    .important { background: #fff3e0; padding: 15px; border-radius: 5px; }
-</style></head>
-<body>
-    <h1>Employee Leave Policy</h1>
-    <p><em>Effective: January 1, 2024</em></p>
-
-    <div class="policy-section">
-        <h2>1. Annual Leave</h2>
-        <p>All full-time employees are entitled to 20 days of paid annual leave per calendar year.</p>
-    </div>
-
-    <div class="important">
-        <strong>Note:</strong> Leave requests must be submitted at least 2 weeks in advance.
-    </div>
-</body>
-</html>''',
-    filename="leave_policy.pdf",
-    catalog="hr_catalog",
-    schema="policies"
-)
-```
-
-## Workflow for Multiple Documents
-
-When asked to generate multiple PDFs:
-
-1. **Plan the documents**: Determine titles, content structure for each
-2. **Generate HTML for each**: Create complete HTML documents
-3. **Call tool in parallel**: Make multiple simultaneous `generate_and_upload_pdf` calls
-4. **Report results**: Summarize successful uploads and any errors
 
 ## Prerequisites
 
