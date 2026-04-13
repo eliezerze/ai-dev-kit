@@ -44,67 +44,95 @@ Before creating Agent Bricks, ensure you have the required data:
 - **Existing UC HTTP Connection**: Connection configured with `is_mcp_connection: 'true'`
 - Agent service principal has `USE CONNECTION` privilege on the connection
 
-## MCP Tools
+## CLI Tools
 
-### Knowledge Assistant Tool
+### Knowledge Assistant CLI
 
-**manage_ka** - Manage Knowledge Assistants (KA)
-- `action`: "create_or_update", "get", "find_by_name", or "delete"
-- `name`: Name for the KA (for create_or_update, find_by_name)
-- `volume_path`: Path to documents (e.g., `/Volumes/catalog/schema/volume/folder`) (for create_or_update)
-- `description`: (optional) What the KA does (for create_or_update)
-- `instructions`: (optional) How the KA should answer (for create_or_update)
-- `tile_id`: The KA tile ID (for get, delete, or update via create_or_update)
-- `add_examples_from_volume`: (optional, default: true) Auto-add examples from JSON files (for create_or_update)
+```bash
+# List all Knowledge Assistants
+databricks knowledge-assistants list-knowledge-assistants
 
-Actions:
-- **create_or_update**: Requires `name`, `volume_path`. Optionally pass `tile_id` to update.
-- **get**: Requires `tile_id`. Returns tile_id, name, description, endpoint_status, knowledge_sources, examples_count.
-- **find_by_name**: Requires `name` (exact match). Returns found, tile_id, name, endpoint_name, endpoint_status. Use this to look up an existing KA when you know the name but not the tile_id.
-- **delete**: Requires `tile_id`.
+# Create a Knowledge Assistant
+databricks knowledge-assistants create-knowledge-assistant "My KA Name" "Description of what the KA does"
 
-### Genie Space Tools
+# Get a Knowledge Assistant by name (resource name format: knowledge-assistants/{id})
+databricks knowledge-assistants get-knowledge-assistant "knowledge-assistants/{ka_id}"
+
+# Update a Knowledge Assistant
+databricks knowledge-assistants update-knowledge-assistant "knowledge-assistants/{ka_id}" "*" "New Name" "New Description"
+
+# Delete a Knowledge Assistant
+databricks knowledge-assistants delete-knowledge-assistant "knowledge-assistants/{ka_id}"
+
+# Create a Knowledge Source (volume-based documents)
+databricks knowledge-assistants create-knowledge-source "knowledge-assistants/{ka_id}" "Source Name" "Description" "VOLUME" \
+  --volume-config '{"volume_id": "/Volumes/catalog/schema/volume"}'
+
+# List Knowledge Sources for a KA
+databricks knowledge-assistants list-knowledge-sources "knowledge-assistants/{ka_id}"
+
+# Sync (re-index) Knowledge Sources
+databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"
+```
+
+### Genie Space CLI
 
 **For comprehensive Genie guidance, use the `databricks-genie` skill.**
 
-Use `manage_genie` with actions:
-- `create_or_update` - Create or update a Genie Space
-- `get` - Get Genie Space details
-- `list` - List all Genie Spaces
-- `delete` - Delete a Genie Space
-- `export` / `import` - For migration
+```bash
+# List all Genie Spaces
+databricks genie list-spaces
+
+# Create a Genie Space
+databricks genie create-space --json '{"display_name": "My Genie", "description": "...", "table_identifiers": ["catalog.schema.table"]}'
+
+# Get a Genie Space
+databricks genie get-space SPACE_ID
+
+# Update a Genie Space
+databricks genie update-space SPACE_ID --json '{"display_name": "New Name"}'
+
+# Delete (trash) a Genie Space
+databricks genie trash-space SPACE_ID
+```
 
 See `databricks-genie` skill for:
 - Table inspection workflow
 - Sample question best practices
 - Curation (instructions, certified queries)
 
-**IMPORTANT**: There is NO system table for Genie spaces (e.g., `system.ai.genie_spaces` does not exist). Use `manage_genie(action="list")` to find spaces.
+**IMPORTANT**: There is NO system table for Genie spaces (e.g., `system.ai.genie_spaces` does not exist). Use `databricks genie list-spaces` to find spaces.
 
-### Supervisor Agent Tool
+### Supervisor Agent (MAS)
 
-**manage_mas** - Manage Supervisor Agents (MAS)
-- `action`: "create_or_update", "get", "find_by_name", or "delete"
-- `name`: Name for the Supervisor Agent (for create_or_update, find_by_name)
-- `agents`: List of agent configurations (for create_or_update), each with:
-  - `name`: Agent identifier (required)
-  - `description`: What this agent handles - critical for routing (required)
-  - `ka_tile_id`: Knowledge Assistant tile ID (use for document Q&A agents - recommended for KAs)
-  - `genie_space_id`: Genie space ID (use for SQL-based data agents)
-  - `endpoint_name`: Model serving endpoint name (for custom agents)
-  - `uc_function_name`: Unity Catalog function name in format `catalog.schema.function_name`
-  - `connection_name`: Unity Catalog connection name (for external MCP servers)
-  - Note: Provide exactly one of: `ka_tile_id`, `genie_space_id`, `endpoint_name`, `uc_function_name`, or `connection_name`
-- `description`: (optional) What the Supervisor Agent does (for create_or_update)
-- `instructions`: (optional) Routing instructions for the supervisor (for create_or_update)
-- `tile_id`: The Supervisor Agent tile ID (for get, delete, or update via create_or_update)
-- `examples`: (optional) List of example questions with `question` and `guideline` fields (for create_or_update)
+**NO CLI AVAILABLE** - Supervisor Agents are managed via the `manager.py` script in this skill folder:
 
-Actions:
-- **create_or_update**: Requires `name`, `agents`. Optionally pass `tile_id` to update.
-- **get**: Requires `tile_id`. Returns tile_id, name, description, endpoint_status, agents, examples_count.
-- **find_by_name**: Requires `name` (exact match). Returns found, tile_id, name, endpoint_status, agents_count. Use this to look up an existing Supervisor Agent when you know the name but not the tile_id.
-- **delete**: Requires `tile_id`.
+```bash
+# List all Supervisor Agents
+python manager.py list_mas
+
+# Create a Supervisor Agent
+python manager.py create_mas "My Supervisor" '{"agents": [...], "description": "...", "instructions": "..."}'
+
+# Get a Supervisor Agent by tile ID
+python manager.py get_mas TILE_ID
+
+# Find a Supervisor Agent by name
+python manager.py find_mas "My Supervisor"
+
+# Update a Supervisor Agent
+python manager.py update_mas TILE_ID '{"name": "New Name", "agents": [...], ...}'
+
+# Delete a Supervisor Agent
+python manager.py delete_mas TILE_ID
+```
+
+Agent configuration options (provide exactly one per agent):
+- `ka_tile_id`: Knowledge Assistant tile ID (for document Q&A agents)
+- `genie_space_id`: Genie space ID (for SQL-based data agents)
+- `endpoint_name`: Model serving endpoint name (for custom agents)
+- `uc_function_name`: Unity Catalog function name in format `catalog.schema.function_name`
+- `connection_name`: Unity Catalog connection name (for external MCP servers)
 
 ## Typical Workflow
 
@@ -126,7 +154,7 @@ Before creating Agent Bricks, generate the required source data:
 
 ### 2. Create the Agent Brick
 
-Use `manage_ka(action="create_or_update", ...)` or `manage_mas(action="create_or_update", ...)` with your data sources.
+Use the CLI commands above or SDK to create your Agent Bricks with data sources.
 
 ### 3. Wait for Provisioning
 
@@ -149,51 +177,40 @@ For KA, if `add_examples_from_volume=true`, examples are automatically extracted
 
 ## Example: Multi-Modal Supervisor Agent
 
-```python
-manage_mas(
-    action="create_or_update",
-    name="Enterprise Support Supervisor",
-    agents=[
+Use `manager.py` to create a Supervisor Agent:
+
+```bash
+python manager.py create_mas "Enterprise Support Supervisor" '{
+    "description": "Comprehensive enterprise support agent",
+    "instructions": "Route queries as follows:\n1. Policy/procedure questions → knowledge_base\n2. Data analysis requests → analytics_engine\n3. Ticket classification → ml_classifier",
+    "agents": [
         {
             "name": "knowledge_base",
             "ka_tile_id": "f32c5f73-466b-...",
-            "description": "Answers questions about company policies, procedures, and documentation from indexed files"
+            "description": "Answers questions about company policies from indexed files"
         },
         {
             "name": "analytics_engine",
             "genie_space_id": "01abc123...",
-            "description": "Runs SQL analytics on usage metrics, performance stats, and operational data"
+            "description": "Runs SQL analytics on usage metrics"
         },
         {
             "name": "ml_classifier",
             "endpoint_name": "custom-classification-endpoint",
-            "description": "Classifies support tickets and predicts resolution time using custom ML model"
+            "description": "Classifies support tickets using custom ML model"
         },
         {
             "name": "data_enrichment",
             "uc_function_name": "support.utils.enrich_ticket_data",
-            "description": "Enriches support ticket data with customer history and context"
+            "description": "Enriches support ticket data with customer history"
         },
         {
             "name": "ticket_operations",
             "connection_name": "ticket_system_mcp",
-            "description": "Creates, updates, assigns, and closes support tickets in external ticketing system"
+            "description": "Creates and updates support tickets in external system"
         }
-    ],
-    description="Comprehensive enterprise support agent with knowledge retrieval, analytics, ML, data enrichment, and ticketing operations",
-    instructions="""
-    Route queries as follows:
-    1. Policy/procedure questions → knowledge_base
-    2. Data analysis requests → analytics_engine
-    3. Ticket classification → ml_classifier
-    4. Customer context lookups → data_enrichment
-    5. Ticket creation/updates → ticket_operations
-
-    If a query spans multiple domains, chain agents:
-    - First gather information (analytics_engine or knowledge_base)
-    - Then take action (ticket_operations)
-    """
-)
+    ]
+}'
 ```
 
 ## Related Skills

@@ -40,7 +40,7 @@ Before creating a Supervisor Agent, you need agents of one or both types:
 - Existing Genie spaces for SQL-based data exploration
 - Great for analytics, metrics, and data-driven questions
 - No separate endpoint deployment required - reference the space directly
-- To find a Genie space by name, use `find_genie_by_name(display_name="My Genie")`
+- To find a Genie space, use `databricks genie list-spaces`
 - **Note**: There is NO system table for Genie spaces - do not try to query `system.ai.genie_spaces`
 
 ## Unity Catalog Functions
@@ -135,13 +135,13 @@ Reference the UC Connection using the `connection_name` field:
 
 ### Complete Example: Multi-System Supervisor
 
-Example showing integration of Genie, KA, and external MCP:
+Example showing integration of Genie, KA, and external MCP using `manager.py`:
 
-```python
-manage_mas(
-    action="create_or_update",
-    name="AP_Invoice_Supervisor",
-    agents=[
+```bash
+python manager.py create_mas "AP_Invoice_Supervisor" '{
+    "description": "AP automation assistant with analytics, policy guidance, and operational actions",
+    "instructions": "Route queries as follows:\n- Data questions (invoice counts, spend analysis, vendor metrics) → billing_analyst\n- Policy questions (thresholds, SLAs, compliance rules) → policy_expert\n- Actions (approve, reject, flag, search, workflows) → ap_operations\n\nWhen a user asks to approve, reject, or flag an invoice, ALWAYS use ap_operations.",
+    "agents": [
         {
             "name": "billing_analyst",
             "genie_space_id": "01abc123...",
@@ -155,22 +155,10 @@ manage_mas(
         {
             "name": "ap_operations",
             "connection_name": "ap_invoice_mcp",
-            "description": (
-                "Execute AP operations: approve/reject/flag invoices, search invoice details, "
-                "get vendor summaries, trigger batch workflows. Use for ANY action or write operation."
-            )
+            "description": "Execute AP operations: approve/reject/flag invoices, search invoice details, get vendor summaries, trigger batch workflows. Use for ANY action or write operation."
         }
-    ],
-    description="AP automation assistant with analytics, policy guidance, and operational actions",
-    instructions="""
-    Route queries as follows:
-    - Data questions (invoice counts, spend analysis, vendor metrics) → billing_analyst
-    - Policy questions (thresholds, SLAs, compliance rules) → policy_expert
-    - Actions (approve, reject, flag, search, workflows) → ap_operations
-
-    When a user asks to approve, reject, or flag an invoice, ALWAYS use ap_operations.
-    """
-)
+    ]
+}'
 ```
 
 ### MCP Connection Testing
@@ -193,31 +181,31 @@ SELECT http_request(
 
 ## Creating a Supervisor Agent
 
-Use the `manage_mas` tool with `action="create_or_update"`:
+**NO CLI AVAILABLE** - Use the `manager.py` script in this skill folder:
 
-- `name`: "Customer Support MAS"
-- `agents`:
-  ```json
-  [
-    {
-      "name": "policy_agent",
-      "ka_tile_id": "f32c5f73-466b-4798-b3a0-5396b5ece2a5",
-      "description": "Answers questions about company policies and procedures from indexed documents"
-    },
-    {
-      "name": "usage_analytics",
-      "genie_space_id": "01abc123-def4-5678-90ab-cdef12345678",
-      "description": "Answers data questions about usage metrics, trends, and statistics"
-    },
-    {
-      "name": "custom_agent",
-      "endpoint_name": "my-custom-endpoint",
-      "description": "Handles specialized queries via custom model endpoint"
-    }
-  ]
-  ```
-- `description`: "Routes customer queries to specialized support agents"
-- `instructions`: "Analyze the user's question and route to the most appropriate agent. If unclear, ask for clarification."
+```bash
+python manager.py create_mas "Customer Support MAS" '{
+    "description": "Routes customer queries to specialized support agents",
+    "instructions": "Analyze the user'\''s question and route to the most appropriate agent. If unclear, ask for clarification.",
+    "agents": [
+        {
+            "name": "policy_agent",
+            "ka_tile_id": "f32c5f73-466b-4798-b3a0-5396b5ece2a5",
+            "description": "Answers questions about company policies and procedures from indexed documents"
+        },
+        {
+            "name": "usage_analytics",
+            "genie_space_id": "01abc123-def4-5678-90ab-cdef12345678",
+            "description": "Answers data questions about usage metrics, trends, and statistics"
+        },
+        {
+            "name": "custom_agent",
+            "endpoint_name": "my-custom-endpoint",
+            "description": "Handles specialized queries via custom model endpoint"
+        }
+    ]
+}'
+```
 
 This example shows mixing Knowledge Assistants (policy_agent), Genie spaces (usage_analytics), and custom endpoints (custom_agent).
 
@@ -237,8 +225,8 @@ Each agent in the `agents` list needs:
 
 **Note**: Provide exactly one of: `ka_tile_id`, `genie_space_id`, `endpoint_name`, `uc_function_name`, or `connection_name`.
 
-To find a KA tile_id, use `manage_ka(action="find_by_name", name="Your KA Name")`.
-To find a Genie space_id, use `find_genie_by_name(display_name="Your Genie Name")`.
+To find a KA tile_id, use `databricks knowledge-assistants list-knowledge-assistants`.
+To find a Genie space_id, use `databricks genie list-spaces`.
 
 ### Writing Good Descriptions
 
@@ -264,7 +252,7 @@ After creation, the Supervisor Agent endpoint needs to provision:
 | `ONLINE` | Ready to route queries | - |
 | `OFFLINE` | Not currently running | - |
 
-Use `manage_mas` with `action="get"` to check the status.
+Use `python manager.py get_mas TILE_ID` to check the status.
 
 ## Adding Example Questions
 
@@ -344,13 +332,19 @@ Consider adding a general-purpose agent for queries that don't fit elsewhere:
 
 ## Updating a Supervisor Agent
 
-To update an existing Supervisor Agent:
+To update an existing Supervisor Agent, use `manager.py`:
 
-1. **Add/remove agents**: Call `manage_mas` with `action="create_or_update"` and updated `agents` list
+```bash
+# Get current state
+python manager.py get_mas TILE_ID
+
+# Update with new configuration
+python manager.py update_mas TILE_ID '{"name": "New Name", "agents": [...], "instructions": "..."}'
+```
+
+1. **Add/remove agents**: Include updated `agents` list
 2. **Update descriptions**: Change agent descriptions to improve routing
 3. **Modify instructions**: Update routing rules
-
-The tool finds the existing Supervisor Agent by name and updates it.
 
 ## Troubleshooting
 

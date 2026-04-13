@@ -1,17 +1,30 @@
-# MCP Tools for App Lifecycle
+# CLI Commands for App Lifecycle
 
-Use MCP tools to create, deploy, and manage Databricks Apps programmatically. This mirrors the CLI workflow but can be invoked by AI agents.
+Use the Databricks CLI to create, deploy, and manage Databricks Apps.
 
 ---
 
-## manage_app - App Lifecycle Management
+## databricks apps - App Lifecycle Management
 
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `create_or_update` | Idempotent create, deploys if source_code_path provided | name |
-| `get` | Get app details (with optional logs) | name |
-| `list` | List all apps | (none, optional name_contains filter) |
-| `delete` | Delete an app | name |
+```bash
+# List all apps
+databricks apps list
+
+# Create an app
+databricks apps create --name my-dashboard --json '{"description": "Customer analytics dashboard"}'
+
+# Get app details
+databricks apps get my-dashboard
+
+# Deploy an app (from workspace source code)
+databricks apps deploy my-dashboard --source-code-path /Workspace/Users/user@example.com/my_app
+
+# Get app logs
+databricks apps logs my-dashboard
+
+# Delete an app
+databricks apps delete my-dashboard
+```
 
 ---
 
@@ -32,42 +45,37 @@ my_app/
 
 ### Step 2: Upload to Workspace
 
-```python
-# MCP Tool: manage_workspace_files
-manage_workspace_files(
-    action="upload",
-    local_path="/path/to/my_app",
-    workspace_path="/Workspace/Users/user@example.com/my_app"
-)
+```bash
+# Upload local folder to workspace
+databricks workspace import-dir /path/to/my_app /Workspace/Users/user@example.com/my_app
 ```
 
 ### Step 3: Create and Deploy App
 
-```python
-# MCP Tool: manage_app (creates if needed + deploys)
-result = manage_app(
-    action="create_or_update",
-    name="my-dashboard",
-    description="Customer analytics dashboard",
-    source_code_path="/Workspace/Users/user@example.com/my_app"
-)
-# Returns: {"name": "my-dashboard", "url": "...", "created": True, "deployment": {...}}
+```bash
+# Create the app
+databricks apps create --name my-dashboard --json '{"description": "Customer analytics dashboard"}'
+
+# Deploy from workspace source
+databricks apps deploy my-dashboard --source-code-path /Workspace/Users/user@example.com/my_app
 ```
 
 ### Step 4: Verify
 
-```python
-# MCP Tool: manage_app (get with logs)
-app = manage_app(action="get", name="my-dashboard", include_logs=True)
-# Returns: {"name": "...", "url": "...", "status": "RUNNING", "logs": "...", ...}
+```bash
+# Check app status
+databricks apps get my-dashboard
+
+# Check logs for errors
+databricks apps logs my-dashboard
 ```
 
 ### Step 5: Iterate
 
 1. Fix issues in local files
-2. Re-upload with `manage_workspace_files(action="upload", ...)`
-3. Re-deploy with `manage_app(action="create_or_update", ...)` (will update existing + deploy)
-4. Check `manage_app(action="get", name=..., include_logs=True)` for errors
+2. Re-upload with `databricks workspace import-dir /path/to/my_app /Workspace/Users/user@example.com/my_app`
+3. Re-deploy with `databricks apps deploy my-dashboard --source-code-path ...`
+4. Check `databricks apps logs my-dashboard` for errors
 5. Repeat until app is healthy
 
 ---
@@ -75,5 +83,5 @@ app = manage_app(action="get", name="my-dashboard", include_logs=True)
 ## Notes
 
 - Add resources (SQL warehouse, Lakebase, etc.) via the Databricks Apps UI after creating the app
-- MCP tools use the service principal's permissions — ensure it has access to required resources
-- For manual deployment, see [4-deployment.md](4-deployment.md)
+- CLI uses your configured profile's credentials — ensure you have access to required resources
+- For DABs deployment, see [4-deployment.md](4-deployment.md)

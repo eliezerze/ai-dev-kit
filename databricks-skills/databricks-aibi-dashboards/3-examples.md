@@ -4,21 +4,14 @@ Production-ready templates you can adapt for your use case.
 
 ## Basic Dashboard (NYC Taxi)
 
-```python
-import json
-
+```bash
 # Step 1: Check table schema
-table_info = get_table_stats_and_schema(catalog="samples", schema="nyctaxi")
+databricks experimental aitools tools discover-schema samples.nyctaxi.trips
 
 # Step 2: Test queries
-execute_sql("SELECT COUNT(*) as trips, AVG(fare_amount) as avg_fare, AVG(trip_distance) as avg_distance FROM samples.nyctaxi.trips")
-execute_sql("""
-    SELECT pickup_zip, COUNT(*) as trip_count
-    FROM samples.nyctaxi.trips
-    GROUP BY pickup_zip
-    ORDER BY trip_count DESC
-    LIMIT 10
-""")
+databricks experimental aitools tools query --warehouse YOUR_WAREHOUSE_ID "SELECT COUNT(*) as trips, AVG(fare_amount) as avg_fare, AVG(trip_distance) as avg_distance FROM samples.nyctaxi.trips"
+
+databricks experimental aitools tools query --warehouse YOUR_WAREHOUSE_ID "SELECT pickup_zip, COUNT(*) as trip_count FROM samples.nyctaxi.trips GROUP BY pickup_zip ORDER BY trip_count DESC LIMIT 10"
 
 # Step 3: Build dashboard JSON
 dashboard = {
@@ -195,15 +188,9 @@ dashboard = {
     }]
 }
 
-# Step 4: Deploy
-result = manage_dashboard(
-    action="create_or_update",
-    display_name="NYC Taxi Dashboard",
-    parent_path="/Workspace/Users/me/dashboards",
-    serialized_dashboard=json.dumps(dashboard),
-    warehouse_id=manage_warehouse(action="get_best"),
-)
-print(result["url"])
+# Step 4: Save dashboard JSON to file, then deploy via CLI
+# Save the above dashboard dict to dashboard.json, then:
+# databricks lakeview create --json @dashboard.json
 ```
 
 ## Dashboard with Global Filters
@@ -294,12 +281,6 @@ dashboard_with_filters = {
 }
 
 # Deploy with filters
-result = manage_dashboard(
-    action="create_or_update",
-    display_name="Sales Dashboard with Filters",
-    parent_path="/Workspace/Users/me/dashboards",
-    serialized_dashboard=json.dumps(dashboard_with_filters),
-    warehouse_id=manage_warehouse(action="get_best"),
-)
-print(result["url"])
+# Save dashboard_with_filters to dashboard_filters.json, then:
+# databricks lakeview create --json @dashboard_filters.json
 ```

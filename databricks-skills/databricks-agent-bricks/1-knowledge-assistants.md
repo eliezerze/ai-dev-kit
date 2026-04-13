@@ -30,17 +30,30 @@ Before creating a KA, you need documents in a Unity Catalog Volume:
 
 ## Creating a Knowledge Assistant
 
-Use the `manage_ka` tool with `action="create_or_update"`:
+Use the CLI to create a Knowledge Assistant:
 
-- `name`: "HR Policy Assistant"
-- `volume_path`: "/Volumes/my_catalog/my_schema/raw_data/hr_docs"
-- `description`: "Answers questions about HR policies and procedures"
-- `instructions`: "Be helpful and always cite the specific policy document when answering. If you're unsure, say so."
+```bash
+# Step 1: Create the Knowledge Assistant
+databricks knowledge-assistants create-knowledge-assistant \
+  "HR Policy Assistant" \
+  "Answers questions about HR policies and procedures"
 
-The tool will:
-1. Create the KA with the specified volume as a knowledge source
-2. Scan the volume for JSON files with example questions (from PDF generation)
-3. Queue examples to be added once the endpoint is ready
+# Step 2: Add a knowledge source (volume with documents)
+databricks knowledge-assistants create-knowledge-source \
+  "knowledge-assistants/{ka_id}" \
+  "HR Documents" \
+  "HR policy documents" \
+  "VOLUME" \
+  --volume-config '{"volume_id": "/Volumes/my_catalog/my_schema/raw_data/hr_docs"}'
+
+# Step 3: Sync (index) the knowledge sources
+databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"
+```
+
+The CLI will:
+1. Create the KA with the specified configuration
+2. Create a knowledge source pointing to your volume
+3. Trigger indexing of the documents
 
 ## Provisioning Timeline
 
@@ -52,9 +65,11 @@ After creation, the KA endpoint needs to provision:
 | `ONLINE` | Ready to use | - |
 | `OFFLINE` | Not currently running | - |
 
-Use `manage_ka` with `action="get"` to check the status:
+Use the CLI to check the status:
 
-- `tile_id`: "<the tile_id from create>"
+```bash
+databricks knowledge-assistants get-knowledge-assistant "knowledge-assistants/{ka_id}"
+```
 
 ## Adding Example Questions
 
@@ -76,7 +91,7 @@ These are automatically added when `add_examples_from_volume=true` (default).
 
 ### Manual
 
-Examples can also be specified in the `manage_ka` create_or_update call if needed.
+Examples can also be added manually via the Databricks UI or SDK.
 
 ## Best Practices
 
@@ -101,7 +116,10 @@ Be helpful and professional. When answering:
 
 To update the indexed documents:
 1. Add/remove/modify files in the volume
-2. Call `manage_ka` with `action="create_or_update"`, the same name and `tile_id`
+2. Trigger a sync to re-index:
+   ```bash
+   databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"
+   ```
 3. The KA will re-index the updated content
 
 ## Example Workflow
@@ -126,40 +144,39 @@ Knowledge Assistants can be used as agents in a Supervisor Agent (formerly Multi
 
 ### Finding the Endpoint Name
 
-Use `manage_ka` with `action="get"` to retrieve the KA details. The response includes:
-- `tile_id`: The unique identifier for the KA
-- `name`: The KA name (sanitized)
-- `endpoint_status`: Current status (ONLINE, PROVISIONING, etc.)
+Use the CLI to retrieve the KA details:
+
+```bash
+# List all KAs to find the one you want
+databricks knowledge-assistants list-knowledge-assistants
+
+# Get details for a specific KA
+databricks knowledge-assistants get-knowledge-assistant "knowledge-assistants/{ka_id}"
+```
+
+The response includes:
+- `name`: The resource name (knowledge-assistants/{ka_id})
+- `display_name`: The KA display name
+- Status information
 
 The endpoint name follows this pattern: `ka-{tile_id}-endpoint`
 
-### Finding a KA by Name
-
-If you know the KA name but not the tile_id, use `manage_ka` with `action="find_by_name"`:
-
-```python
-manage_ka(action="find_by_name", name="HR_Policy_Assistant")
-# Returns: {"found": True, "tile_id": "01abc...", "name": "HR_Policy_Assistant", "endpoint_name": "ka-01abc...-endpoint"}
-```
-
 ### Example: Adding KA to Supervisor Agent
 
-```python
-# First, find the KA
-manage_ka(action="find_by_name", name="HR_Policy_Assistant")
+```bash
+# First, list KAs to find the tile_id
+databricks knowledge-assistants list-knowledge-assistants
 
-# Then use the tile_id in a Supervisor Agent
-manage_mas(
-    action="create_or_update",
-    name="Support_MAS",
-    agents=[
+# Then use the tile_id to create a Supervisor Agent with manager.py
+python manager.py create_mas "Support_MAS" '{
+    "agents": [
         {
             "name": "hr_agent",
-            "ka_tile_id": "<tile_id from find_by_name>",
+            "ka_tile_id": "<tile_id from list>",
             "description": "Answers HR policy questions from the employee handbook"
         }
     ]
-)
+}'
 ```
 
 ## Troubleshooting
