@@ -82,10 +82,10 @@ ALWAYS use exact endpoint names from this table. NEVER guess or abbreviate.
 | Custom PyFunc | [2-custom-pyfunc.md](2-custom-pyfunc.md) | Custom preprocessing, signatures |
 | GenAI Agents | [3-genai-agents.md](3-genai-agents.md) | ResponsesAgent, LangGraph |
 | Tools Integration | [4-tools-integration.md](4-tools-integration.md) | UC Functions, Vector Search |
-| Development & Testing | [5-development-testing.md](5-development-testing.md) | MCP workflow, iteration |
+| Development & Testing | [5-development-testing.md](5-development-testing.md) | CLI workflow, iteration |
 | Logging & Registration | [6-logging-registration.md](6-logging-registration.md) | mlflow.pyfunc.log_model |
 | Deployment | [7-deployment.md](7-deployment.md) | Job-based async deployment |
-| Querying Endpoints | [8-querying-endpoints.md](8-querying-endpoints.md) | SDK, REST, MCP tools |
+| Querying Endpoints | [8-querying-endpoints.md](8-querying-endpoints.md) | CLI, SDK, REST |
 | Package Requirements | [9-package-requirements.md](9-package-requirements.md) | DBR versions, pip |
 
 ---
