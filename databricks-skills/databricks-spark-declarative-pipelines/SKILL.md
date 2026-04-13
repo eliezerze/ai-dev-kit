@@ -83,15 +83,14 @@ Use this when the pipeline is **part of an existing DAB project**:
 
 → See [1-project-initialization.md](references/1-project-initialization.md) for adding pipelines to existing bundles
 
-### Option C: Rapid Iteration with MCP Tools (no bundle management)
+### Option C: Rapid Iteration with CLI (no bundle management)
 
 Use this when you need to **quickly create, test, and iterate** on a pipeline without managing bundle files:
 - User wants to "just run a pipeline and see if it works"
 - Part of a larger demo where bundle is managed separately, or the DAB bundle will be created at the end as you want to quickly test the project first
 - Prototyping or experimenting with pipeline logic
-- User explicitly asks to use MCP tools
 
-→ See [2-mcp-approach.md](references/2-mcp-approach.md) for MCP-based workflow
+→ See [2-cli-approach.md](references/2-cli-approach.md) for CLI-based workflow
 
 ---
 
@@ -101,7 +100,7 @@ Before writing pipeline code, make sure you have:
 ```
 - [ ] Language selected: Python or SQL
 - [ ] Read the syntax basics: **SQL**: Always Read [sql/1-syntax-basics.md](references/sql/1-syntax-basics.md), **Python**: Always Read [python/1-syntax-basics.md](references/python/1-syntax-basics.md)
-- [ ] Workflow chosen: Standalone DAB / Existing DAB / MCP iteration
+- [ ] Workflow chosen: Standalone DAB / Existing DAB / CLI iteration
 - [ ] Compute type: serverless (default) or classic
 - [ ] Schema strategy: single schema with prefixes vs. multi-schema
 - [ ] Consider [Multi-Schema Patterns](#multi-schema-patterns) and [Modern Defaults](#modern-defaults)
@@ -179,7 +178,7 @@ After choosing your workflow (see [Choose Your Workflow](#choose-your-workflow))
 | Task | Guide |
 |------|-------|
 | **Setting up standalone pipeline project** | [1-project-initialization.md](references/1-project-initialization.md) |
-| **Rapid iteration with MCP tools** | [2-mcp-approach.md](references/2-mcp-approach.md) |
+| **Rapid iteration with CLI** | [2-cli-approach.md](references/2-cli-approach.md) |
 | **Advanced configuration** | [3-advanced-configuration.md](references/3-advanced-configuration.md) |
 | **Migrating from DLT** | [4-dlt-migration.md](references/4-dlt-migration.md) |
 
@@ -248,7 +247,7 @@ For detailed syntax, see [sql/1-syntax-basics.md](references/sql/1-syntax-basics
 ### Project Structure
 - **Standalone pipeline projects**: Use `databricks pipelines init` for Asset Bundle with multi-environment support
 - **Pipeline in existing bundle**: Add to `resources/*.pipeline.yml`
-- **Rapid iteration/prototyping**: Use MCP tools, formalize in bundle later
+- **Rapid iteration/prototyping**: Use CLI/SDK, formalize in bundle later
 - See **[1-project-initialization.md](references/1-project-initialization.md)** for project setup details
 
 ### Minimal pipeline config pointers
@@ -278,29 +277,40 @@ For detailed examples, see **[3-advanced-configuration.md](references/3-advanced
 
 ## Post-Run Validation (Required)
 
-After running a pipeline (via DAB or MCP), you **MUST** validate both the execution status AND the actual data.
+After running a pipeline (via DAB or CLI), you **MUST** validate both the execution status AND the actual data.
 
 ### Step 1: Check Pipeline Execution Status
 
-**From MCP (`manage_pipeline(action="run")` or `manage_pipeline(action="create_or_update")`):**
-- Check `result["success"]` and `result["state"]`
-- If failed, check `result["message"]` and `result["errors"]` for details
+```bash
+# Get pipeline status and details
+databricks pipelines get --pipeline-id <pipeline_id>
+
+# Get recent events/logs
+databricks pipelines list-pipeline-events --pipeline-id <pipeline_id>
+```
 
 **From DAB (`databricks bundle run`):**
 - Check the command output for success/failure
-- Use `manage_pipeline(action="get", pipeline_id=...)` to get detailed status and recent events
+- Use `databricks pipelines get --pipeline-id ...` to get detailed status and recent events
 
 ### Step 2: Validate Output Data
 
 Even if the pipeline reports SUCCESS, you **MUST** verify the data is correct:
 
-```
-# MCP Tool: get_table_stats_and_schema - validates schema, row counts, and stats
-get_table_stats_and_schema(
-    catalog="my_catalog",
-    schema="my_schema",
-    table_names=["bronze_*", "silver_*", "gold_*"]  # Use glob patterns
-)
+```bash
+# Check table schema and stats
+databricks sql execute --warehouse-id WAREHOUSE_ID --query "
+DESCRIBE TABLE EXTENDED my_catalog.my_schema.bronze_orders;
+"
+
+# Check row counts
+databricks sql execute --warehouse-id WAREHOUSE_ID --query "
+SELECT 'bronze_orders' as table_name, COUNT(*) as row_count FROM my_catalog.my_schema.bronze_orders
+UNION ALL
+SELECT 'silver_orders', COUNT(*) FROM my_catalog.my_schema.silver_orders
+UNION ALL
+SELECT 'gold_summary', COUNT(*) FROM my_catalog.my_schema.gold_summary;
+"
 ```
 
 **Check for:**
@@ -314,7 +324,7 @@ get_table_stats_and_schema(
 If validation reveals problems, trace upstream to find the root cause:
 
 1. **Start from the problematic table** - identify what's wrong (empty, wrong counts, bad data)
-2. **Check its source table** - use `get_table_stats_and_schema` on the upstream table
+2. **Check its source table** - run `DESCRIBE` and `COUNT(*)` on the upstream table
 3. **Trace back to bronze** - continue until you find where the issue originates
 4. **Common causes:**
    - Bronze empty → source files missing or path incorrect
