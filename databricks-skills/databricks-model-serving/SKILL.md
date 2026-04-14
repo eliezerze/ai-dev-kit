@@ -183,7 +183,7 @@ databricks serving-endpoints query sklearn-classifier --json '{
 databricks workspace import-dir ./my_agent /Workspace/Users/you@company.com/my_agent
 
 # List workspace files
-databricks workspace ls /Workspace/Users/you@company.com/my_agent
+databricks workspace list /Workspace/Users/you@company.com/my_agent
 ```
 
 ### Jobs for Deployment

@@ -1,279 +1,271 @@
 #!/usr/bin/env python3
 """
-PDF Generator - Self-contained HTML to PDF generation and upload to Unity Catalog volumes.
+PDF Generator - Convert HTML files to PDF locally.
 
 Usage:
-    python pdf_generator.py generate --html '<html>...</html>' --filename report.pdf --catalog my_catalog --schema my_schema
-    python pdf_generator.py generate --html-file input.html --filename report.pdf --catalog my_catalog --schema my_schema --volume raw_data --folder docs
+    # Convert single file
+    python pdf_generator.py convert --input ./raw_data/html/report.html --output ./raw_data/pdf
+
+    # Convert entire folder (parallel)
+    python pdf_generator.py convert --input ./raw_data/html --output ./raw_data/pdf
+
+    # Force reconvert (ignore timestamps)
+    python pdf_generator.py convert --input ./raw_data/html --output ./raw_data/pdf --force
 
 Requires: plutoprint
-    pip install plutoprint
+    uv / pip install plutoprint
 """
 
 import argparse
-import json
 import logging
-import subprocess
 import sys
-import tempfile
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
+
+MAX_WORKERS = 4
 
 
 @dataclass
-class PDFResult:
-    """Result from generating a PDF."""
-    success: bool
-    volume_path: Optional[str] = None
+class ConversionResult:
+    """Result from converting HTML to PDF."""
+    html_path: str
+    pdf_path: Optional[str] = None
+    success: bool = False
+    skipped: bool = False
     error: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
+            "html_path": self.html_path,
+            "pdf_path": self.pdf_path,
             "success": self.success,
-            "volume_path": self.volume_path,
+            "skipped": self.skipped,
             "error": self.error,
         }
 
 
-def _convert_html_to_pdf(html_content: str, output_path: str) -> bool:
-    """Convert HTML content to PDF using PlutoPrint.
+@dataclass
+class BatchResult:
+    """Result from batch conversion."""
+    total: int = 0
+    converted: int = 0
+    skipped: int = 0
+    failed: int = 0
+    results: list = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "total": self.total,
+            "converted": self.converted,
+            "skipped": self.skipped,
+            "failed": self.failed,
+            "results": [r.to_dict() for r in self.results],
+        }
+
+
+def _needs_conversion(html_path: Path, pdf_path: Path) -> bool:
+    """Check if HTML needs to be converted (PDF missing or older than HTML).
 
     Args:
-        html_content: HTML string to convert
-        output_path: Path where PDF should be saved
+        html_path: Path to HTML file
+        pdf_path: Path to output PDF file
 
     Returns:
-        True if successful, False otherwise
+        True if conversion needed, False if PDF is up-to-date
     """
-    output_dir = Path(output_path).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not pdf_path.exists():
+        return True
+
+    html_mtime = html_path.stat().st_mtime
+    pdf_mtime = pdf_path.stat().st_mtime
+
+    return html_mtime > pdf_mtime
+
+
+def convert_html_to_pdf(
+    html_path: Path,
+    pdf_path: Path,
+    force: bool = False,
+) -> ConversionResult:
+    """Convert a single HTML file to PDF.
+
+    Args:
+        html_path: Path to HTML file
+        pdf_path: Path to output PDF file
+        force: If True, convert even if PDF is up-to-date
+
+    Returns:
+        ConversionResult with success/skip/error status
+    """
+    result = ConversionResult(html_path=str(html_path))
+
+    # Check if conversion needed
+    if not force and not _needs_conversion(html_path, pdf_path):
+        result.skipped = True
+        result.success = True
+        result.pdf_path = str(pdf_path)
+        logger.debug(f"Skipped (up-to-date): {html_path.name}")
+        return result
+
+    # Ensure output directory exists
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         import plutoprint
 
-        logger.debug(f"Converting HTML to PDF using PlutoPrint: {output_path}")
+        # Read HTML content
+        html_content = html_path.read_text(encoding="utf-8")
 
+        # Convert to PDF
         book = plutoprint.Book(plutoprint.PAGE_SIZE_A4)
         book.load_html(html_content)
-        book.write_to_pdf(output_path)
+        book.write_to_pdf(str(pdf_path))
 
-        if Path(output_path).exists():
-            file_size = Path(output_path).stat().st_size
-            logger.info(f"PDF saved: {output_path} (size: {file_size:,} bytes)")
-            return True
+        if pdf_path.exists():
+            result.success = True
+            result.pdf_path = str(pdf_path)
+            logger.info(f"Converted: {html_path.name} -> {pdf_path.name}")
         else:
-            logger.error("PlutoPrint conversion failed - file not created")
-            return False
+            result.error = "PDF file not created"
+            logger.error(f"Failed: {html_path.name} - PDF not created")
 
     except ImportError:
-        logger.error("PlutoPrint is not installed. Install with: pip install plutoprint")
-        return False
+        result.error = "plutoprint not installed. Run: pip install plutoprint"
+        logger.error(result.error)
     except Exception as e:
-        logger.error(f"Failed to convert HTML to PDF: {str(e)}", exc_info=True)
-        return False
+        result.error = str(e)
+        logger.error(f"Failed: {html_path.name} - {e}")
+
+    return result
 
 
-def _run_cli(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    """Run a databricks CLI command.
+def convert_folder(
+    input_dir: Path,
+    output_dir: Path,
+    force: bool = False,
+    max_workers: int = MAX_WORKERS,
+) -> BatchResult:
+    """Convert all HTML files in a folder to PDF (parallel).
+
+    Preserves subfolder structure from input to output.
 
     Args:
-        args: Command arguments (without 'databricks' prefix)
-        check: Whether to raise on non-zero exit code
+        input_dir: Directory containing HTML files
+        output_dir: Directory for output PDF files
+        force: If True, convert even if PDFs are up-to-date
+        max_workers: Number of parallel workers (default: 4)
 
     Returns:
-        CompletedProcess with stdout/stderr
+        BatchResult with counts and per-file results
     """
-    cmd = ["databricks"] + args
-    logger.debug(f"Running: {' '.join(cmd)}")
-    return subprocess.run(cmd, capture_output=True, text=True, check=check)
+    batch = BatchResult()
 
+    # Find all HTML files
+    html_files = list(input_dir.rglob("*.html"))
+    batch.total = len(html_files)
 
-def _validate_volume_exists(catalog: str, schema: str, volume: str) -> Optional[str]:
-    """Validate that the volume exists using CLI.
+    if batch.total == 0:
+        logger.warning(f"No HTML files found in {input_dir}")
+        return batch
 
-    Args:
-        catalog: Catalog name
-        schema: Schema name
-        volume: Volume name
+    logger.info(f"Found {batch.total} HTML file(s) in {input_dir}")
 
-    Returns:
-        Error message if validation fails, None if successful
-    """
-    # Check volume exists
-    result = _run_cli(["volumes", "read", f"{catalog}.{schema}.{volume}"], check=False)
-    if result.returncode != 0:
-        return f"Volume '{catalog}.{schema}.{volume}' does not exist or is not accessible: {result.stderr}"
-    return None
+    def process_file(html_path: Path) -> ConversionResult:
+        # Compute relative path to preserve folder structure
+        relative_path = html_path.relative_to(input_dir)
+        pdf_relative = relative_path.with_suffix(".pdf")
+        pdf_path = output_dir / pdf_relative
 
+        return convert_html_to_pdf(html_path, pdf_path, force=force)
 
-def _upload_to_volume(local_path: str, volume_path: str) -> Optional[str]:
-    """Upload a file to Unity Catalog volume using CLI.
+    # Process files in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(process_file, f): f for f in html_files}
 
-    Args:
-        local_path: Local file path
-        volume_path: Volume path (e.g., /Volumes/catalog/schema/volume/file.pdf)
+        for future in as_completed(futures):
+            result = future.result()
+            batch.results.append(result)
 
-    Returns:
-        Error message if upload fails, None if successful
-    """
-    result = _run_cli(["fs", "cp", local_path, volume_path, "--overwrite"], check=False)
-    if result.returncode != 0:
-        return f"Failed to upload to {volume_path}: {result.stderr}"
-    return None
+            if result.skipped:
+                batch.skipped += 1
+            elif result.success:
+                batch.converted += 1
+            else:
+                batch.failed += 1
 
-
-def _create_volume_directory(volume_path: str) -> None:
-    """Create a directory in the volume using CLI (best effort).
-
-    Args:
-        volume_path: Volume directory path
-    """
-    # Use fs mkdirs - it's idempotent
-    _run_cli(["fs", "mkdirs", volume_path], check=False)
-
-
-def generate_and_upload_pdf(
-    html_content: str,
-    filename: str,
-    catalog: str,
-    schema: str,
-    volume: str = "raw_data",
-    folder: Optional[str] = None,
-) -> PDFResult:
-    """Convert HTML to PDF and upload to a Unity Catalog volume.
-
-    Args:
-        html_content: Complete HTML document (including <!DOCTYPE html>, <html>, <head>, <style>, <body>)
-        filename: Name for the PDF file (e.g., "report.pdf" or "report" - .pdf added if missing)
-        catalog: Unity Catalog name
-        schema: Schema name
-        volume: Volume name (default: "raw_data")
-        folder: Optional folder within volume (e.g., "documents")
-
-    Returns:
-        PDFResult with success status and volume_path if successful
-
-    Example:
-        >>> html = '''
-        ... <!DOCTYPE html>
-        ... <html>
-        ... <head><style>body { font-family: Arial; }</style></head>
-        ... <body><h1>Hello World</h1></body>
-        ... </html>
-        ... '''
-        >>> result = generate_and_upload_pdf(
-        ...     html_content=html,
-        ...     filename="hello.pdf",
-        ...     catalog="my_catalog",
-        ...     schema="my_schema",
-        ... )
-        >>> print(result.volume_path)
-        /Volumes/my_catalog/my_schema/raw_data/hello.pdf
-    """
-    # Ensure filename ends with .pdf
-    if not filename.lower().endswith(".pdf"):
-        filename = f"{filename}.pdf"
-
-    # Validate volume exists
-    error = _validate_volume_exists(catalog, schema, volume)
-    if error:
-        return PDFResult(success=False, error=error)
-
-    # Build volume path
-    if folder:
-        volume_path = f"/Volumes/{catalog}/{schema}/{volume}/{folder}/{filename}"
-    else:
-        volume_path = f"/Volumes/{catalog}/{schema}/{volume}/{filename}"
-
-    try:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            local_pdf_path = str(Path(temp_dir) / filename)
-
-            # Convert HTML to PDF
-            if not _convert_html_to_pdf(html_content, local_pdf_path):
-                return PDFResult(success=False, error="Failed to convert HTML to PDF")
-
-            # Create folder if needed
-            if folder:
-                folder_path = f"/Volumes/{catalog}/{schema}/{volume}/{folder}"
-                _create_volume_directory(folder_path)
-
-            # Upload to volume
-            error = _upload_to_volume(local_pdf_path, volume_path)
-            if error:
-                return PDFResult(success=False, error=error)
-
-            logger.info(f"PDF uploaded to {volume_path}")
-            return PDFResult(success=True, volume_path=volume_path)
-
-    except Exception as e:
-        error_msg = f"Error generating PDF: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return PDFResult(success=False, error=error_msg)
+    logger.info(f"Done: {batch.converted} converted, {batch.skipped} skipped, {batch.failed} failed")
+    return batch
 
 
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Generate PDFs from HTML and upload to Unity Catalog volumes",
+        description="Convert HTML files to PDF",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Generate from inline HTML
-    python pdf_generator.py generate --html '<html><body><h1>Hello</h1></body></html>' \\
-        --filename hello.pdf --catalog my_catalog --schema my_schema
+    # Convert single file
+    python pdf_generator.py convert --input ./raw_data/html/report.html --output ./raw_data/pdf
 
-    # Generate from HTML file
-    python pdf_generator.py generate --html-file input.html \\
-        --filename report.pdf --catalog my_catalog --schema my_schema --folder reports
+    # Convert entire folder (parallel)
+    python pdf_generator.py convert --input ./raw_data/html --output ./raw_data/pdf
+
+    # Force reconvert all
+    python pdf_generator.py convert --input ./raw_data/html --output ./raw_data/pdf --force
         """,
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
-    # Generate command
-    gen_parser = subparsers.add_parser("generate", help="Generate PDF from HTML")
-    gen_parser.add_argument("--html", help="HTML content as string")
-    gen_parser.add_argument("--html-file", help="Path to HTML file")
-    gen_parser.add_argument("--filename", required=True, help="Output PDF filename")
-    gen_parser.add_argument("--catalog", required=True, help="Unity Catalog name")
-    gen_parser.add_argument("--schema", required=True, help="Schema name")
-    gen_parser.add_argument("--volume", default="raw_data", help="Volume name (default: raw_data)")
-    gen_parser.add_argument("--folder", help="Optional folder within volume")
-    gen_parser.add_argument("--json", action="store_true", help="Output result as JSON")
+    # Convert command
+    conv_parser = subparsers.add_parser("convert", help="Convert HTML to PDF")
+    conv_parser.add_argument("--input", "-i", required=True, help="Input HTML file or folder")
+    conv_parser.add_argument("--output", "-o", required=True, help="Output folder for PDFs")
+    conv_parser.add_argument("--force", "-f", action="store_true", help="Force reconvert (ignore timestamps)")
+    conv_parser.add_argument("--workers", "-w", type=int, default=MAX_WORKERS, help=f"Parallel workers (default: {MAX_WORKERS})")
 
     args = parser.parse_args()
 
-    if args.command == "generate":
-        # Get HTML content
-        if args.html:
-            html_content = args.html
-        elif args.html_file:
-            with open(args.html_file, "r") as f:
-                html_content = f.read()
-        else:
-            print("Error: Either --html or --html-file is required")
+    if args.command == "convert":
+        input_path = Path(args.input)
+        output_path = Path(args.output)
+
+        if not input_path.exists():
+            print(f"Error: Input path does not exist: {input_path}")
             sys.exit(1)
 
-        result = generate_and_upload_pdf(
-            html_content=html_content,
-            filename=args.filename,
-            catalog=args.catalog,
-            schema=args.schema,
-            volume=args.volume,
-            folder=args.folder,
-        )
+        if input_path.is_file():
+            # Single file conversion
+            if not input_path.suffix.lower() == ".html":
+                print(f"Error: Input file must be .html: {input_path}")
+                sys.exit(1)
 
-        if args.json:
-            print(json.dumps(result.to_dict(), indent=2))
-        else:
-            if result.success:
-                print(f"Success: PDF uploaded to {result.volume_path}")
+            pdf_path = output_path / input_path.with_suffix(".pdf").name
+            result = convert_html_to_pdf(input_path, pdf_path, force=args.force)
+
+            if result.skipped:
+                print(f"Skipped (up-to-date): {result.pdf_path}")
+            elif result.success:
+                print(f"Converted: {result.pdf_path}")
             else:
                 print(f"Error: {result.error}")
+                sys.exit(1)
+        else:
+            # Folder conversion
+            batch = convert_folder(
+                input_path,
+                output_path,
+                force=args.force,
+                max_workers=args.workers,
+            )
+
+            print(f"\nSummary: {batch.converted} converted, {batch.skipped} skipped, {batch.failed} failed")
+            if batch.failed > 0:
                 sys.exit(1)
     else:
         parser.print_help()

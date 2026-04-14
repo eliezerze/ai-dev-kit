@@ -137,10 +137,10 @@ databricks volumes delete CATALOG_NAME.SCHEMA_NAME.VOLUME_NAME
 
 ```bash
 # Run SQL query
-databricks sql execute --warehouse-id WAREHOUSE_ID --query "SELECT * FROM catalog.schema.table LIMIT 10"
+databricks experimental aitools tools query --warehouse WAREHOUSE_ID "SELECT * FROM catalog.schema.table LIMIT 10"
 
 # Create objects via SQL (alternative approach)
-databricks sql execute --warehouse-id WAREHOUSE_ID --query "CREATE CATALOG my_catalog"
-databricks sql execute --warehouse-id WAREHOUSE_ID --query "CREATE SCHEMA my_catalog.my_schema"
-databricks sql execute --warehouse-id WAREHOUSE_ID --query "CREATE VOLUME my_catalog.my_schema.my_volume"
+databricks experimental aitools tools query --warehouse WAREHOUSE_ID "CREATE CATALOG my_catalog"
+databricks experimental aitools tools query --warehouse WAREHOUSE_ID "CREATE SCHEMA my_catalog.my_schema"
+databricks experimental aitools tools query --warehouse WAREHOUSE_ID "CREATE VOLUME my_catalog.my_schema.my_volume"
 ```

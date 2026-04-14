@@ -1,6 +1,6 @@
 ---
 name: databricks-agent-bricks
-description: "Create Knowledge Assistants (KA) for document Q&A and Supervisor Agents for multi-agent orchestration. For Genie Spaces, see databricks-genie skill."
+description: "Create Agent Bricks: Knowledge Assistants (KA) for document Q&A and Supervisor Agents for multi-agent orchestration (MAS). For Genie Spaces, see databricks-genie skill."
 ---
 
 # Agent Bricks
@@ -91,5 +91,5 @@ databricks genie list-spaces --output json | jq '.[].space_id'
 
 | Topic | File |
 |-------|------|
-| KA source types, troubleshooting | [1-knowledge-assistants.md](1-knowledge-assistants.md) |
+| KA source types, index, troubleshooting | [1-knowledge-assistants.md](1-knowledge-assistants.md) |
 | UC functions, MCP servers, examples | [2-supervisor-agents.md](2-supervisor-agents.md) |

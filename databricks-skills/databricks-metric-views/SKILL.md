@@ -162,7 +162,7 @@ DROP VIEW IF EXISTS catalog.schema.orders_metrics;
 
 ```bash
 # Execute SQL via CLI
-databricks sql execute --warehouse-id WAREHOUSE_ID --query "
+databricks experimental aitools tools query --warehouse WAREHOUSE_ID "
 CREATE OR REPLACE VIEW catalog.schema.orders_metrics
 WITH METRICS
 LANGUAGE YAML

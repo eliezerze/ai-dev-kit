@@ -51,3 +51,18 @@ Use existing index instead of auto-indexing:
 - Ensure documents are well-structured
 - Break large documents into smaller files
 - Add clear headings and sections
+
+## Evaluation Questions
+
+When testing a KA, check if the volume or project contains a `pdf_eval_questions.json` file with test questions:
+
+```json
+{
+  "api_errors_guide.pdf": {
+    "question": "What is the solution for error ERR-4521?",
+    "expected_fact": "Call /api/v2/auth/refresh with refresh_token before the 3600s TTL expires"
+  }
+}
+```
+
+Use these questions to validate retrieval accuracy. See [databricks-unstructured-pdf-generation](../databricks-unstructured-pdf-generation/SKILL.md) for generating test PDFs with eval questions.
