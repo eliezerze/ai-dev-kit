@@ -27,6 +27,7 @@ Run code on Databricks. Three execution modes—choose based on workload.
 
 ### Decision Flow
 
+Prefer Databricks Connect for all spark-based workload.
 ```
 Spark-based code? → Databricks Connect (fastest)
   └─ Python 3.12 missing? → Install it + databricks-connect
@@ -91,7 +92,7 @@ databricks jobs create --json '{
 | `databricks jobs create/run-now` | Serverless, Cluster | Run code remotely |
 | `databricks clusters list` | Interactive | List clusters, check status |
 | `databricks clusters create/start/delete` | Interactive | Manage clusters. **COSTLY:** `start` takes 3-8 min |
-| `databricks sql warehouses create/list` | SQL | Manage SQL warehouses |
+| `databricks warehouses create/list` | SQL | Manage SQL warehouses |
 
 ## Related Skills
 
