@@ -1,200 +1,149 @@
 # Knowledge Assistants (KA)
 
-Knowledge Assistants are document-based Q&A systems that use RAG (Retrieval-Augmented Generation) to answer questions from indexed documents.
+Knowledge Assistants are document-based Q&A systems using RAG (Retrieval-Augmented Generation).
 
-## What is a Knowledge Assistant?
+## How It Works
 
-A KA connects to documents stored in a Unity Catalog Volume and allows users to ask natural language questions. The system:
-
-1. **Indexes** all documents in the volume (PDFs, text files, etc.)
+1. **Indexes** documents from a Volume (PDFs, text files)
 2. **Retrieves** relevant chunks when a question is asked
 3. **Generates** an answer using the retrieved context
 
 ## When to Use
 
-Use a Knowledge Assistant when:
-- You have a collection of documents (policies, manuals, guides, reports)
+- Collection of documents (policies, manuals, guides, reports)
 - Users need to find specific information without reading entire documents
-- You want to provide a conversational interface to documentation
-
-## Prerequisites
-
-Before creating a KA, you need documents in a Unity Catalog Volume:
-
-**Option 1: Use existing documents**
-- Upload PDFs/text files to a Volume manually or via SDK
-
-**Option 2: Generate synthetic documents**
-- Use the `databricks-unstructured-pdf-generation` skill to create realistic PDF documents
-- Each PDF gets a companion JSON file with question/guideline pairs for evaluation
+- Conversational interface to documentation
 
 ## Creating a Knowledge Assistant
 
-Use the CLI to create a Knowledge Assistant:
+### Step 1: Find Your Volume
 
 ```bash
-# Step 1: Create the Knowledge Assistant
+# List volumes in the schema
+databricks volumes list catalog schema --output json
+
+# Browse volume contents
+databricks experimental aitools tools query --warehouse WH "LIST '/Volumes/catalog/schema/volume/'"
+```
+
+### Step 2: Create the KA
+
+```bash
 databricks knowledge-assistants create-knowledge-assistant \
   "HR Policy Assistant" \
   "Answers questions about HR policies and procedures"
-
-# Step 2: Add a knowledge source (volume with documents)
-databricks knowledge-assistants create-knowledge-source \
-  "knowledge-assistants/{ka_id}" \
-  "HR Documents" \
-  "HR policy documents" \
-  "VOLUME" \
-  --volume-config '{"volume_id": "/Volumes/my_catalog/my_schema/raw_data/hr_docs"}'
-
-# Step 3: Sync (index) the knowledge sources
-databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"
 ```
 
-The CLI will:
-1. Create the KA with the specified configuration
-2. Create a knowledge source pointing to your volume
-3. Trigger indexing of the documents
-
-## Provisioning Timeline
-
-After creation, the KA endpoint needs to provision:
-
-| Status | Meaning | Duration |
-|--------|---------|----------|
-| `PROVISIONING` | Creating the endpoint | 2-5 minutes |
-| `ONLINE` | Ready to use | - |
-| `OFFLINE` | Not currently running | - |
-
-Use the CLI to check the status:
-
-```bash
-databricks knowledge-assistants get-knowledge-assistant "knowledge-assistants/{ka_id}"
-```
-
-## Adding Example Questions
-
-Example questions help with:
-- **Evaluation**: Test if the KA answers correctly
-- **User onboarding**: Show users what to ask
-
-### Automatic (from PDF generation)
-
-If you used `generate_pdf_documents`, each PDF has a companion JSON with:
+Response:
 ```json
 {
-  "question": "What is the company's remote work policy?",
-  "guideline": "Should mention the 3-day minimum in-office requirement"
+  "id": "dab408a2-f8f4-439e-b65d-cc3cc2c45bbd",
+  "name": "knowledge-assistants/dab408a2-f8f4-439e-b65d-cc3cc2c45bbd",
+  "endpoint_name": "ka-dab408a2-endpoint",
+  "state": "CREATING"
 }
 ```
 
-These are automatically added when `add_examples_from_volume=true` (default).
-
-### Manual
-
-Examples can also be added manually via the Databricks UI or SDK.
-
-## Best Practices
-
-### Document Organization
-
-- **One volume per topic**: e.g., `/Volumes/catalog/schema/raw_data/hr_docs`, `/Volumes/catalog/schema/raw_data/tech_docs`
-- **Clear naming**: Name files descriptively so chunks are identifiable
-
-### Instructions
-
-Good instructions improve answer quality:
-
-```
-Be helpful and professional. When answering:
-1. Always cite the specific document and section
-2. If multiple documents are relevant, mention all of them
-3. If the information isn't in the documents, clearly say so
-4. Use bullet points for multi-part answers
-```
-
-### Updating Content
-
-To update the indexed documents:
-1. Add/remove/modify files in the volume
-2. Trigger a sync to re-index:
-   ```bash
-   databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"
-   ```
-3. The KA will re-index the updated content
-
-## Example Workflow
-
-1. **Generate PDF documents** using `databricks-unstructured-pdf-generation` skill:
-   - Creates PDFs in `/Volumes/catalog/schema/raw_data/pdf_documents`
-   - Creates JSON files with question/guideline pairs
-
-2. **Create the Knowledge Assistant**:
-   - `name`: "My Document Assistant"
-   - `volume_path`: "/Volumes/catalog/schema/raw_data/pdf_documents"
-
-3. **Wait for ONLINE status** (2-5 minutes)
-
-4. **Examples are automatically added** from the JSON files
-
-5. **Test the KA** in the Databricks UI
-
-## Using KA in Supervisor Agents
-
-Knowledge Assistants can be used as agents in a Supervisor Agent (formerly Multi-Agent Supervisor, MAS). Each KA has an associated model serving endpoint.
-
-### Finding the Endpoint Name
-
-Use the CLI to retrieve the KA details:
+### Step 3: Add Knowledge Source
 
 ```bash
-# List all KAs to find the one you want
-databricks knowledge-assistants list-knowledge-assistants
+databricks knowledge-assistants create-knowledge-source \
+  "knowledge-assistants/{ka_id}" \
+  --json '{
+    "display_name": "HR Documents",
+    "description": "HR policy PDFs",
+    "source_type": "files",
+    "files": {"path": "/Volumes/my_catalog/my_schema/hr_docs/"}
+  }'
+```
 
-# Get details for a specific KA
+**Source types:**
+
+| Type | Config | Use Case |
+|------|--------|----------|
+| `files` | `files.path` | PDFs/text in a Volume |
+| `index` | `index.index_name`, `index.text_col`, `index.doc_uri_col` | Existing Vector Search index |
+
+### Step 4: Sync and Wait
+
+```bash
+# Trigger indexing
+databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"
+
+# Check status
 databricks knowledge-assistants get-knowledge-assistant "knowledge-assistants/{ka_id}"
 ```
 
-The response includes:
-- `name`: The resource name (knowledge-assistants/{ka_id})
-- `display_name`: The KA display name
-- Status information
+| State | Meaning | Duration |
+|-------|---------|----------|
+| `CREATING` | Provisioning endpoint | 2-5 minutes |
+| `ONLINE` | Ready to use | - |
+| `OFFLINE` | Not running | - |
 
-The endpoint name follows this pattern: `ka-{tile_id}-endpoint`
-
-### Example: Adding KA to Supervisor Agent
+## Managing Knowledge Assistants
 
 ```bash
-# First, list KAs to find the tile_id
+# List all KAs
 databricks knowledge-assistants list-knowledge-assistants
 
-# Then use the tile_id to create a Supervisor Agent with mas_manager.py
-python scripts/mas_manager.py create_mas "Support_MAS" '{
+# Get details
+databricks knowledge-assistants get-knowledge-assistant "knowledge-assistants/{ka_id}"
+
+# List knowledge sources
+databricks knowledge-assistants list-knowledge-sources "knowledge-assistants/{ka_id}"
+
+# Update KA
+databricks knowledge-assistants update-knowledge-assistant "knowledge-assistants/{ka_id}" "*" "New Name" "New Description"
+
+# Delete KA
+databricks knowledge-assistants delete-knowledge-assistant "knowledge-assistants/{ka_id}"
+```
+
+## Updating Content
+
+To update indexed documents:
+
+1. Add/remove/modify files in the volume
+2. Re-sync:
+   ```bash
+   databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"
+   ```
+
+## Using KA in Supervisor Agents
+
+KAs can be added to Supervisor Agents using their tile ID:
+
+```bash
+# Get KA tile ID
+databricks knowledge-assistants list-knowledge-assistants --output json | jq '.[].id'
+
+# Use in Supervisor Agent
+python scripts/mas_manager.py create_mas "Support MAS" '{
     "agents": [
         {
-            "name": "hr_agent",
-            "ka_tile_id": "<tile_id from list>",
-            "description": "Answers HR policy questions from the employee handbook"
+            "name": "policy_agent",
+            "ka_tile_id": "dab408a2-f8f4-439e-b65d-cc3cc2c45bbd",
+            "description": "Answers HR policy questions from documents"
         }
     ]
 }'
 ```
 
+The endpoint name follows pattern: `ka-{tile_id}-endpoint`
+
 ## Troubleshooting
 
-### Endpoint stays in PROVISIONING
-
+### KA stays in CREATING state
+- Wait up to 10 minutes
 - Check workspace capacity and quotas
 - Verify the volume path is accessible
-- Wait up to 10 minutes before investigating further
 
 ### Documents not indexed
-
-- Ensure files are in a supported format (PDF, TXT, MD)
+- Ensure files are supported format (PDF, TXT, MD)
 - Check file permissions in the volume
-- Verify the volume path is correct
+- Verify volume path is correct (trailing slash matters)
 
 ### Poor answer quality
-
-- Add more specific instructions
+- Add instructions to guide the AI's behavior
 - Ensure documents are well-structured
 - Consider breaking large documents into smaller files
