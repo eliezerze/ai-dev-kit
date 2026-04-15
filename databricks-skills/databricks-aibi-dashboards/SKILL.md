@@ -17,7 +17,7 @@ A dashboard should be showing something relevant for a human, typically some KPI
 | List tables | `databricks experimental aitools tools query --warehouse WH "SHOW TABLES IN catalog.schema"` |
 | Get schema | `databricks experimental aitools tools discover-schema catalog.schema.table1 catalog.schema.table2` |
 | Test query | `databricks experimental aitools tools query --warehouse WH "SELECT..."` |
-| Create dashboard | `databricks lakeview create --display-name "X" --warehouse-id "Y" --serialized-dashboard "$(cat file.json)"` |
+| Create dashboard | `databricks lakeview create --display-name "X" --warehouse-id "Y" --dataset-catalog "catalog" --dataset-schema "schema" --serialized-dashboard "$(cat file.json)"` |
 | Update dashboard | `databricks lakeview update DASHBOARD_ID --serialized-dashboard "$(cat file.json)"` |
 | Publish | `databricks lakeview publish DASHBOARD_ID --warehouse-id WH` |
 | Delete | `databricks lakeview trash DASHBOARD_ID` |
@@ -54,7 +54,7 @@ databricks warehouses list
 ```bash
 # Get table schemas for designing queries
 databricks experimental aitools tools query --warehouse WAREHOUSE_ID "SHOW TABLES IN catalog.schema" 2>&1
-# IMPORTANT: Use CATALOG.SCHEMA.TABLE format (full 3-part name required)
+# Use CATALOG.SCHEMA.TABLE format for discover-schema (this is for exploration only)
 databricks experimental aitools tools discover-schema catalog.schema.table1 catalog.schema.table2
 
 # Example:
@@ -63,6 +63,8 @@ databricks experimental aitools tools discover-schema samples.nyctaxi.trips main
 # Explore data patterns if needed to confirm the data tells the intended story (to understand what/how to visualize):
 databricks experimental aitools tools query --warehouse WAREHOUSE_ID "<YOUR DATA EXPLORATION QUERY>"
 ```
+
+> **Note**: The `discover-schema` command requires full `catalog.schema.table` paths, but **dashboard queries should use `schema.table` format** with catalog set via `--dataset-catalog` at dashboard creation.
 
 
 ### Step 3: Verify Data Matches Story
@@ -97,18 +99,14 @@ Before writing JSON, plan your dashboard:
 Once created, you can edit the file as following:
 ```bash
 # Create a dashboard
-# IMPORTANT: Use --display-name, --warehouse-id, and --serialized-dashboard (NOT --json @file.json with displayName in it)
+# IMPORTANT: Use --dataset-catalog and --dataset-schema to set defaults for all queries
+# This way, queries can use schema.table format instead of catalog.schema.table
 databricks lakeview create \
   --display-name "My Dashboard" \
   --warehouse-id "abc123def456" \
+  --dataset-catalog "my_catalog" \
+  --dataset-schema "my_schema" \
   --serialized-dashboard "$(cat dashboard.json)"
-
-# Alternative: Use --json with the correct structure
-databricks lakeview create --json '{
-  "display_name": "My Dashboard",
-  "warehouse_id": "abc123def456",
-  "serialized_dashboard": "{\"datasets\":[...],\"pages\":[...]}"
-}'
 
 # List all dashboards
 databricks lakeview list
@@ -141,7 +139,7 @@ Every dashboard's `serialized_dashboard` content must follow this exact structur
     {
       "name": "ds_x",
       "displayName": "Dataset X",
-      "queryLines": ["SELECT col1, col2 ", "FROM catalog.schema.table"]
+      "queryLines": ["SELECT col1, col2 ", "FROM schema.table"]
     }
   ],
   "pages": [
@@ -211,7 +209,7 @@ Apply unless user specifies otherwise:
 
 - **One dataset per domain** (e.g., orders, customers, products). Datasets shared across widgets benefit from the same filters.
 - **Exactly ONE valid SQL query per dataset** (no multiple queries separated by `;`)
-- Always use **fully-qualified table names**: `catalog.schema.table_name`
+- **NEVER specify catalog in queries** - use `schema.table` format (e.g., `gold.daily_sales`). Set the default catalog and schema via CLI options `--dataset-catalog` and `--dataset-schema` when creating the dashboard
 - SELECT must include all dimensions needed by widgets and all derived columns via `AS` aliases
 - Put ALL business logic (CASE/WHEN, COALESCE, ratios) into the dataset SELECT with explicit aliases
 - **Contract rule**: Every widget `fieldName` must exactly match a dataset column or alias

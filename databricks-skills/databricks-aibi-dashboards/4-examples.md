@@ -59,6 +59,8 @@ This example shows a complete dashboard with:
 - Data table for detailed records
 - Global filters (date range, region, category)
 
+> **Note**: Queries use `schema.table` format (no catalog). Set the catalog via `--dataset-catalog "my_catalog"` when creating the dashboard.
+
 ```json
 {
   "datasets": [
@@ -67,7 +69,7 @@ This example shows a complete dashboard with:
       "displayName": "Daily Sales",
       "queryLines": [
         "SELECT sale_date, region, department, total_orders, total_units, total_revenue, total_cost, profit_margin ",
-        "FROM catalog.schema.gold_daily_sales ",
+        "FROM gold.daily_sales ",
         "ORDER BY sale_date"
       ]
     },
@@ -76,7 +78,7 @@ This example shows a complete dashboard with:
       "displayName": "Product Performance",
       "queryLines": [
         "SELECT product_id, product_name, department, region, units_sold, revenue, cost, profit ",
-        "FROM catalog.schema.gold_product_performance"
+        "FROM gold.product_performance"
       ]
     }
   ],
