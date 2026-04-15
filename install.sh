@@ -78,7 +78,6 @@ else
 fi
 
 # Installation mode defaults
-INSTALL_MCP=true
 INSTALL_SKILLS=true
 INSTALL_MCP="${DEVKIT_INSTALL_MCP:-false}"
 MCP_INSTALL_PATH="${DEVKIT_MCP_PATH:-$HOME/.ai-dev-kit}"
@@ -140,13 +139,12 @@ while [ $# -gt 0 ]; do
         -b|--branch)      BRANCH="$2"; shift 2 ;;
         --skills-only)    INSTALL_MCP=false; shift ;;
         --mcp-only)       INSTALL_SKILLS=false; shift ;;
-        --mcp-path)       USER_MCP_PATH="$2"; shift 2 ;;
+        --mcp-path)       USER_MCP_PATH="$2"; MCP_INSTALL_PATH="$2"; INSTALL_MCP=true; shift 2 ;;
         --skills-profile) SKILLS_PROFILE="$2"; shift 2 ;;
         --skills)         USER_SKILLS="$2"; shift 2 ;;
         --list-skills)    LIST_SKILLS=true; shift ;;
         --silent)         SILENT=true; shift ;;
         --mcp)            INSTALL_MCP=true; shift ;;
-        --mcp-path)       MCP_INSTALL_PATH="$2"; INSTALL_MCP=true; shift 2 ;;
         --tools)          USER_TOOLS="$2"; shift 2 ;;
         --experimental)   CHANNEL="experimental"; shift ;;
         -f|--force)       FORCE=true; shift ;;
@@ -1238,7 +1236,7 @@ install_mcp_server() {
     # Create virtual environment
     msg "Creating virtual environment..."
     cd "$mcp_dir"
-    uv venv --python 3.11 -q
+    uv venv --python 3.12 --allow-existing -q 2>/dev/null || uv venv --allow-existing -q
     ok "Virtual environment created"
 
     # Install packages
@@ -1382,7 +1380,7 @@ setup_mcp() {
     fi
 
     msg "Installing Python dependencies..."
-    $arch_prefix uv venv --python 3.11 --allow-existing "$VENV_DIR" -q 2>/dev/null || $arch_prefix uv venv --allow-existing "$VENV_DIR" -q
+    $arch_prefix uv venv --python 3.12 --allow-existing "$VENV_DIR" -q 2>/dev/null || $arch_prefix uv venv --allow-existing "$VENV_DIR" -q
     $arch_prefix uv pip install --python "$VENV_PYTHON" -e "$REPO_DIR/databricks-tools-core" -e "$REPO_DIR/databricks-mcp-server" -q
 
     "$VENV_PYTHON" -c "import databricks_mcp_server" 2>/dev/null || die "MCP server install failed"
@@ -2130,7 +2128,6 @@ main() {
         echo -e "  Tools:       ${G}$(echo "$TOOLS" | tr ' ' ', ')${N}"
         echo -e "  Profile:     ${G}${PROFILE}${N}"
         echo -e "  Scope:       ${G}${SCOPE}${N}"
-        [ "$INSTALL_MCP" = true ]    && echo -e "  MCP server:  ${G}${INSTALL_DIR}${N}"
         if [ "$INSTALL_SKILLS" = true ]; then
             if [ -n "$USER_SKILLS" ]; then
                 echo -e "  Skills:      ${G}custom selection${N}"
@@ -2174,9 +2171,6 @@ main() {
     
     # Install skills
     [ "$INSTALL_SKILLS" = true ] && install_skills "$base_dir"
-
-    # Install MCP server if requested
-    [ "$INSTALL_MCP" = true ] && install_mcp_server
 
     # Write GEMINI.md if gemini is selected
     if echo "$TOOLS" | grep -q gemini; then
