@@ -1799,11 +1799,11 @@ main() {
         [ "$INSTALL_MCP" = true ]    && echo -e "  MCP server:  ${G}${INSTALL_DIR}${N}"
         if [ "$INSTALL_SKILLS" = true ]; then
             if [ -n "$USER_SKILLS" ]; then
-                echo -e "  Skills:      ${G}custom selection${N}"
+                echo -e "  Skills:      ${G}custom selection${N} ${Y}(will be overwritten, backup your changes first)${N}"
             else
                 local sk_total=0
                 for _ in $SELECTED_SKILLS $SELECTED_MLFLOW_SKILLS $SELECTED_APX_SKILLS; do sk_total=$((sk_total + 1)); done
-                echo -e "  Skills:      ${G}${SKILLS_PROFILE:-all} ($sk_total skills)${N}"
+                echo -e "  Skills:      ${G}${SKILLS_PROFILE:-all} ($sk_total skills)${N} ${Y}(will be overwritten, backup your changes first)${N}"
             fi
         fi
         [ "$INSTALL_MCP" = true ]    && echo -e "  MCP config:  ${G}yes${N}"
