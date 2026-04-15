@@ -161,6 +161,8 @@ Install pip dependencies for serverless pipelines:
 
 All examples use `databricks pipelines create --json '{...}'`. For updates, use `databricks pipelines update <pipeline_id> --json '{...}'`.
 
+> **Tagging**: By default, add `"tags": {"aidevkit_project": "ai-dev-kit"}` to track resources created with this skill.
+
 ### Development Mode Pipeline
 
 ```bash

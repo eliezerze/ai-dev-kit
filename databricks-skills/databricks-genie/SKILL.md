@@ -50,6 +50,10 @@ databricks genie create-space --json "{
 # Get space details (with full config)
 databricks genie get-space SPACE_ID --include-serialized-space
 
+# By default, after creation, tag the Genie Space to track resources created with this skill
+databricks workspace-entity-tag-assignments create-tag-assignment \
+  geniespaces SPACE_ID aidevkit_project --tag-value ai-dev-kit
+
 # Delete a Genie Space
 databricks genie trash-space SPACE_ID
 ```
@@ -63,11 +67,17 @@ If answers are inaccurate or incomplete, improve the space — see "Improving a 
 ### Export & Import
 
 ```bash
-# Export space configuration
-databricks genie export-space SPACE_ID > exported.json
+# Export space configuration (extract serialized_space from get-space output)
+databricks genie get-space SPACE_ID --include-serialized-space -o json | jq '.serialized_space' > genie_space.json
 
-# Import space from exported config
-databricks genie import-space --json @exported.json
+# Import: Create a new space with the exported serialized_space
+databricks genie create-space --json "{
+  \"warehouse_id\": \"WAREHOUSE_ID\",
+  \"title\": \"Sales Analytics\",
+  \"description\": \"Migrated space\",
+  \"parent_path\": \"/Workspace/Users/you@company.com/genie_spaces\",
+  \"serialized_space\": $(cat genie_space.json)
+}"
 ```
 
 ### Improving a Genie Space

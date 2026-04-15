@@ -25,9 +25,10 @@ databricks experimental aitools tools query --warehouse WH "LIST '/Volumes/catal
 # Create KA
 databricks knowledge-assistants create-knowledge-assistant "Name" "Description"
 
-# Add knowledge source
-databricks knowledge-assistants create-knowledge-source "knowledge-assistants/{ka_id}" \
-  --json '{"display_name": "Docs", "description": "...", "source_type": "files", "files": {"path": "/Volumes/catalog/schema/volume/"}}'
+# Add knowledge source (4 positional args: PARENT DISPLAY_NAME DESCRIPTION SOURCE_TYPE)
+databricks knowledge-assistants create-knowledge-source \
+  "knowledge-assistants/{ka_id}" "Docs" "Documentation files" "files" \
+  --json '{"files": {"path": "/Volumes/catalog/schema/volume/"}}'
 
 # Sync and check status
 databricks knowledge-assistants sync-knowledge-sources "knowledge-assistants/{ka_id}"

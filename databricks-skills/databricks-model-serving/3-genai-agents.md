@@ -226,7 +226,7 @@ Run via CLI:
 ```bash
 # Upload and run on Databricks
 databricks workspace import-dir ./my_agent /Workspace/Users/<user>/my_agent
-databricks jobs run-now --job-id <JOB_ID>  # Job configured to run test_agent.py
+databricks jobs run-now JOB_ID  # JOB_ID is positional; job runs test_agent.py
 ```
 
 ## Logging the Agent

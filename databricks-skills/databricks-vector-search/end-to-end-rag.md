@@ -7,11 +7,11 @@ Build a complete Retrieval-Augmented Generation pipeline: prepare documents, cre
 | Command | Step |
 |---------|------|
 | `databricks experimental aitools tools query` | Create source table, insert documents |
-| `databricks vector-search endpoints create` | Create compute endpoint |
-| `databricks vector-search indexes create-index` | Create Delta Sync index with managed embeddings |
-| `databricks vector-search indexes sync-index` | Trigger index sync |
-| `databricks vector-search indexes get-index` | Check index status |
-| `databricks vector-search indexes query-index` | Test similarity search |
+| `databricks vector-search-endpoints create-endpoint` | Create compute endpoint |
+| `databricks vector-search-indexes create-index` | Create Delta Sync index with managed embeddings |
+| `databricks vector-search-indexes sync-index` | Trigger index sync |
+| `databricks vector-search-indexes get-index` | Check index status |
+| `databricks vector-search-indexes query-index` | Test similarity search |
 
 ---
 

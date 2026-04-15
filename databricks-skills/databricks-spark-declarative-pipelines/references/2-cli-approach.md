@@ -30,6 +30,7 @@ databricks pipelines create --json '{
   "libraries": [
     {"file": {"path": "/Workspace/Users/user@example.com/my_pipeline"}}
   ],
+  "tags": {"aidevkit_project": "ai-dev-kit"},
   "development": true
 }'
 

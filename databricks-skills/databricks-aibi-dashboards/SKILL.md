@@ -125,6 +125,10 @@ databricks lakeview unpublish DASHBOARD_ID
 
 # Delete (trash) a dashboard
 databricks lakeview trash DASHBOARD_ID
+
+# By default, after creation, tag dashboards to track resources created with this skill
+databricks workspace-entity-tag-assignments create-tag-assignment \
+  dashboards DASHBOARD_ID aidevkit_project --tag-value ai-dev-kit
 ```
 
 ---

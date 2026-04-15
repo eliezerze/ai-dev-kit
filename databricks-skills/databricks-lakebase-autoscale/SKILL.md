@@ -182,9 +182,8 @@ w.postgres.update_endpoint(
 ### Project Management
 
 ```bash
-# Create a project
-databricks postgres create-project \
-    --project-id my-app \
+# Create a project (PROJECT_ID is positional)
+databricks postgres create-project my-app \
     --json '{"spec": {"display_name": "My App", "pg_version": "17"}}'
 
 # List projects

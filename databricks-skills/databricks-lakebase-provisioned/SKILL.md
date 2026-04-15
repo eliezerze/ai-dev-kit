@@ -231,25 +231,23 @@ mlflow.langchain.log_model(
 ### Instance Management
 
 ```bash
-# Create instance
-databricks database create-database-instance \
-    --name my-lakebase-instance \
-    --capacity CU_1
+# Create instance (NAME is positional)
+databricks database create-database-instance my-lakebase-instance --capacity CU_1
 
 # Get instance details
-databricks database get-database-instance --name my-lakebase-instance
+databricks database get-database-instance my-lakebase-instance
 
 # List instances
 databricks database list-database-instances
 
 # Stop instance (saves cost)
-databricks database stop-database-instance --name my-lakebase-instance
+databricks database stop-database-instance my-lakebase-instance
 
 # Start instance
-databricks database start-database-instance --name my-lakebase-instance
+databricks database start-database-instance my-lakebase-instance
 
 # Delete instance
-databricks database delete-database-instance --name my-lakebase-instance
+databricks database delete-database-instance my-lakebase-instance
 ```
 
 ### OAuth Credentials

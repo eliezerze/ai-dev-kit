@@ -24,6 +24,10 @@ databricks apps logs my-dashboard
 
 # Delete an app
 databricks apps delete my-dashboard
+
+# By default, after creation, tag apps to track resources created with this skill
+databricks workspace-entity-tag-assignments create-tag-assignment \
+  apps my-dashboard aidevkit_project --tag-value ai-dev-kit
 ```
 
 ---

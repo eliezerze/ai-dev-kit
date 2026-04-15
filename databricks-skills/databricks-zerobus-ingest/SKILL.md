@@ -160,14 +160,14 @@ databricks jobs create --json '{
   }]
 }'
 
-databricks jobs run-now --job-id <JOB_ID>
+databricks jobs run-now JOB_ID
 ```
 
 **If execution fails:**
 1. Read the error from the job run output
 2. Edit the local Python file to fix the issue
 3. Re-upload: `databricks workspace import-dir ./scripts /Workspace/Users/<user>/scripts`
-4. Re-run: `databricks jobs run-now --job-id <JOB_ID>`
+4. Re-run: `databricks jobs run-now JOB_ID`
 
 ---
 

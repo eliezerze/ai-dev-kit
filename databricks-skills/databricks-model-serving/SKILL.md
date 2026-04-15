@@ -164,6 +164,11 @@ databricks serving-endpoints list
 # Get endpoint details and status
 databricks serving-endpoints get my-agent-endpoint
 
+# By default, after creation, tag serving endpoints to track resources created with this skill
+databricks serving-endpoints patch my-agent-endpoint --json '{
+  "add_tags": [{"key": "aidevkit_project", "value": "ai-dev-kit"}]
+}'
+
 # Query a chat/agent endpoint
 databricks serving-endpoints query my-agent-endpoint --json '{
   "messages": [{"role": "user", "content": "Hello!"}],
@@ -192,11 +197,11 @@ databricks workspace list /Workspace/Users/you@company.com/my_agent
 # Create a deployment job
 databricks jobs create --json @deploy_job.json
 
-# Run the deployment job
-databricks jobs run-now --job-id JOB_ID
+# Run the deployment job (JOB_ID is positional)
+databricks jobs run-now JOB_ID
 
-# Check job run status
-databricks jobs get-run --run-id RUN_ID
+# Check job run status (RUN_ID is positional)
+databricks jobs get-run RUN_ID
 ```
 
 ---

@@ -65,7 +65,7 @@ Run via CLI:
 ```bash
 # Upload and run on Databricks
 databricks workspace import-dir ./my_agent /Workspace/Users/<user>/my_agent
-databricks jobs run-now --job-id <JOB_ID>  # Job configured to run log_model.py
+databricks jobs run-now JOB_ID  # JOB_ID is positional; job runs log_model.py
 ```
 
 ## Resources for Auto Authentication

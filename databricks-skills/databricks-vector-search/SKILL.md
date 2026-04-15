@@ -268,28 +268,22 @@ scan_result = w.vector_search_indexes.scan_index(
 
 ```bash
 # List endpoints
-databricks vector-search endpoints list
+databricks vector-search-endpoints list-endpoints
 
-# Create endpoint
-databricks vector-search endpoints create \
-    --name my-endpoint \
-    --endpoint-type STANDARD
+# Create endpoint (positional args: NAME ENDPOINT_TYPE)
+databricks vector-search-endpoints create-endpoint my-endpoint STANDARD
 
-# List indexes on endpoint
-databricks vector-search indexes list-indexes \
-    --endpoint-name my-endpoint
+# List indexes on endpoint (positional arg: ENDPOINT_NAME)
+databricks vector-search-indexes list-indexes my-endpoint
 
-# Get index status
-databricks vector-search indexes get-index \
-    --index-name catalog.schema.my_index
+# Get index status (positional arg: INDEX_NAME)
+databricks vector-search-indexes get-index catalog.schema.my_index
 
-# Sync index (for TRIGGERED)
-databricks vector-search indexes sync-index \
-    --index-name catalog.schema.my_index
+# Sync index (positional arg: INDEX_NAME)
+databricks vector-search-indexes sync-index catalog.schema.my_index
 
-# Delete index
-databricks vector-search indexes delete-index \
-    --index-name catalog.schema.my_index
+# Delete index (positional arg: INDEX_NAME)
+databricks vector-search-indexes delete-index catalog.schema.my_index
 ```
 
 ## Common Issues

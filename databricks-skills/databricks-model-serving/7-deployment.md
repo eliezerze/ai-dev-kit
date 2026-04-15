@@ -46,6 +46,7 @@ Use the Databricks CLI:
 ```bash
 databricks jobs create --json '{
   "name": "deploy-agent-job",
+  "tags": {"aidevkit_project": "ai-dev-kit"},
   "tasks": [{
     "task_key": "deploy",
     "spark_python_task": {
@@ -72,8 +73,8 @@ Save the returned `job_id`.
 Run the job - returns immediately:
 
 ```bash
-databricks jobs run-now --job-id <job_id> \
-  --params '{"model_name": "main.agents.my_agent", "version": "1"}'
+# Note: job_id is positional, parameters go in --json
+databricks jobs run-now --json '{"job_id": <job_id>, "job_parameters": {"model_name": "main.agents.my_agent", "version": "1"}}'
 ```
 
 Save the returned `run_id`.
@@ -83,7 +84,8 @@ Save the returned `run_id`.
 Check job run status:
 
 ```bash
-databricks jobs get-run --run-id <run_id>
+# run_id is positional
+databricks jobs get-run <run_id>
 ```
 
 Or check endpoint directly:

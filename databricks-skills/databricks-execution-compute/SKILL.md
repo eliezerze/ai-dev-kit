@@ -63,8 +63,8 @@ databricks jobs create --json '{
   "environments": [{"environment_key": "default", "spec": {"client": "4"}}]
 }'
 
-# Run the job
-databricks jobs run-now --job-id JOB_ID
+# Run the job (JOB_ID is positional)
+databricks jobs run-now JOB_ID
 ```
 
 ### Interactive Cluster → [reference](references/3-interactive-cluster.md)
@@ -93,6 +93,41 @@ databricks jobs create --json '{
 | `databricks clusters list` | Interactive | List clusters, check status |
 | `databricks clusters create/start/delete` | Interactive | Manage clusters. **COSTLY:** `start` takes 3-8 min |
 | `databricks warehouses create/list` | SQL | Manage SQL warehouses |
+
+### List Interactive Clusters (exclude job clusters)
+
+```bash
+# List only UI/API clusters (excludes job clusters - much faster)
+databricks clusters list --cluster-sources UI,API --output json | jq '.[] | select(.state == "RUNNING")'
+```
+
+### Create Cluster
+
+```bash
+# Create interactive cluster (SPARK_VERSION is positional)
+# By default, include custom_tags to track resources created with this skill
+databricks clusters create 15.4.x-scala2.12 --json '{
+  "cluster_name": "my-cluster",
+  "node_type_id": "i3.xlarge",
+  "num_workers": 2,
+  "autotermination_minutes": 60,
+  "custom_tags": {"aidevkit_project": "ai-dev-kit"}
+}'
+```
+
+### Create SQL Warehouse
+
+```bash
+# Create serverless SQL warehouse
+# By default, include tags to track resources created with this skill
+databricks warehouses create --json '{
+  "name": "my-warehouse",
+  "cluster_size": "Small",
+  "enable_serverless_compute": true,
+  "auto_stop_mins": 10,
+  "tags": {"custom_tags": [{"key": "aidevkit_project", "value": "ai-dev-kit"}]}
+}'
+```
 
 ## Related Skills
 
