@@ -61,8 +61,8 @@ USER_SKILLS="${DEVKIT_SKILLS:-}"
 # Check if scope was explicitly set via env var
 [ -n "${DEVKIT_SCOPE:-}" ] && SCOPE_EXPLICIT=true
 
-OWNER="databricks-solutions"
-REPO="ai-dev-kit"
+OWNER="${DEVKIT_OWNER:-eliezerze}"
+REPO="${DEVKIT_REPO:-ai-dev-kit}"
 
 if [ -n "${DEVKIT_BRANCH:-}" ]; then
   BRANCH="$DEVKIT_BRANCH"

@@ -1,8 +1,55 @@
-# Databricks AI Dev Kit
+# Databricks AI Dev Kit (eliezerze fork)
+
+> **Fork notice.** This is a fork of [databricks-solutions/ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit)
+> with one extra capability: **tag-based table filtering** for the MCP server.
+> See [Tag-Based Table Filtering](#tag-based-table-filtering) below.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Databricks-Certified%20Gold%20Project-FFD700?style=for-the-badge&logo=databricks&logoColor=black" alt="Databricks Certified Gold Project">
 </p>
+
+---
+
+## Tag-Based Table Filtering
+
+When enabled, the MCP server will only let your AI assistant **see and query
+tables that carry a specific Unity Catalog tag**. Everything else is invisible
+and any SQL referencing other tables is rejected with a clear error.
+
+**Quick start (recommended: `mcp-ready=yes`)**
+
+```bash
+# Install (Mac / Linux)
+bash <(curl -sL https://raw.githubusercontent.com/eliezerze/ai-dev-kit/main/install.sh)
+
+# Then export these env vars BEFORE starting your AI client (Cursor, Claude Code, ...)
+export MCP_TABLE_FILTER_TAG_NAME=mcp-ready
+export MCP_TABLE_FILTER_TAG_VALUE=yes
+```
+
+The filter is **disabled by default**. If `MCP_TABLE_FILTER_TAG_NAME` is unset,
+the MCP server behaves identically to upstream.
+
+**All env vars (all optional)**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MCP_TABLE_FILTER_TAG_NAME` | _(unset, disables filter)_ | UC tag key to filter on |
+| `MCP_TABLE_FILTER_TAG_VALUE` | _(empty = match any value)_ | Required tag value |
+| `MCP_TABLE_FILTER_CACHE_TTL` | `300` | Allowlist cache TTL (seconds) |
+| `MCP_TABLE_FILTER_WAREHOUSE_ID` | _(auto-pick)_ | SQL warehouse used to query `system.information_schema.table_tags` |
+| `MCP_TABLE_FILTER_FAIL_CLOSED` | `true` | If `true`, unparseable SQL is rejected (recommended) |
+
+**How to tag a table:**
+
+```sql
+ALTER TABLE main.my_schema.my_table SET TAGS ('mcp-ready' = 'yes');
+```
+
+**What gets enforced:** every call to `execute_sql`, `execute_sql_multi`, and
+`get_table_stats_and_schema` validates the SQL / table list against the
+allowlist. `system.information_schema.*` is always allowed (so the filter can
+look itself up).
 
 ---
 > 🔒 Proactive Dependency Security  

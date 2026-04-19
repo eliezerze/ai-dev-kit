@@ -21,6 +21,7 @@ from databricks_tools_core.sql import (
 )
 
 from ..server import mcp
+from ..table_filter import get_table_filter
 
 
 def _format_results_markdown(rows: List[Dict[str, Any]]) -> str:
@@ -76,6 +77,14 @@ def execute_sql(
 
     Use for SELECT/INSERT/UPDATE/table DDL. For catalog/schema/volume DDL, use manage_uc_objects.
     output_format: "markdown" (default, 50% smaller) or "json"."""
+    tag_filter = get_table_filter()
+    if tag_filter.is_enabled:
+        tag_filter.validate_sql(
+            sql_query,
+            catalog_context=catalog,
+            schema_context=schema,
+        )
+
     rows = _execute_sql(
         sql_query=sql_query,
         warehouse_id=warehouse_id,
@@ -84,6 +93,14 @@ def execute_sql(
         timeout=timeout,
         query_tags=query_tags,
     )
+
+    if tag_filter.is_enabled:
+        rows = tag_filter.filter_show_results(
+            sql_query, rows,
+            catalog_context=catalog,
+            schema_context=schema,
+        )
+
     if output_format == "json":
         return rows
     return _format_results_markdown(rows)
@@ -103,6 +120,14 @@ def execute_sql_multi(
     """Execute multiple SQL statements with dependency-aware parallelism. Independent queries run in parallel.
 
     For catalog/schema/volume DDL, use manage_uc_objects instead."""
+    tag_filter = get_table_filter()
+    if tag_filter.is_enabled:
+        tag_filter.validate_sql(
+            sql_content,
+            catalog_context=catalog,
+            schema_context=schema,
+        )
+
     result = _execute_sql_multi(
         sql_content=sql_content,
         warehouse_id=warehouse_id,
@@ -158,7 +183,26 @@ def get_table_stats_and_schema(
     """Get schema and stats for tables. table_stat_level: NONE (schema only), SIMPLE (default, +row count), DETAILED (+cardinality/min/max/histograms).
 
     table_names: list or glob patterns, None=all tables."""
-    # Convert string to enum
+    tag_filter = get_table_filter()
+    if tag_filter.is_enabled and table_names:
+        blocked = [
+            t for t in table_names
+            if not any(c in t for c in ["*", "?", "[", "]"])
+            and not tag_filter.is_table_allowed(catalog, schema, t)
+        ]
+        if blocked:
+            tag_repr = (
+                f"{tag_filter.tag_name}={tag_filter.tag_value}"
+                if tag_filter.tag_value else tag_filter.tag_name
+            )
+            return {
+                "error": True,
+                "message": (
+                    f"Access denied. Tables not tagged with "
+                    f"'{tag_repr}': {', '.join(blocked)}"
+                ),
+            }
+
     level = TableStatLevel[table_stat_level.upper()]
     result = _get_table_stats_and_schema(
         catalog=catalog,
@@ -167,8 +211,17 @@ def get_table_stats_and_schema(
         table_stat_level=level,
         warehouse_id=warehouse_id,
     )
-    # Convert to dict for JSON serialization
-    return result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result
+
+    result_dict = result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result
+
+    if tag_filter.is_enabled and "tables" in result_dict:
+        allowed = tag_filter.get_allowed_tables()
+        result_dict["tables"] = [
+            t for t in result_dict["tables"]
+            if (catalog.lower(), schema.lower(), t.get("name", "").split(".")[-1].lower()) in allowed
+        ]
+
+    return result_dict
 
 
 @mcp.tool(timeout=60)
