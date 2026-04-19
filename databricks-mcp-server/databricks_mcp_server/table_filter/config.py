@@ -9,12 +9,19 @@ from dataclasses import dataclass
 _TAG_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
+DEFAULT_TAG_NAME = "mcp-ready"
+DEFAULT_TAG_VALUE = "yes"
+
+
 @dataclass(frozen=True)
 class FilterConfig:
     """Immutable configuration for the table filter.
 
-    Use ``FilterConfig.from_env()`` to build from environment variables, or
-    construct directly for tests / non-env-driven usage.
+    Defaults to ``mcp-ready=yes`` so the filter is **always on** in this fork.
+    Override via env vars or by constructing directly:
+
+      MCP_TABLE_FILTER_TAG_NAME=other-tag    # change which tag to filter on
+      MCP_TABLE_FILTER_TAG_NAME=             # explicitly disable filtering
 
     Attributes:
         tag_name: UC tag key to filter on. Empty string disables filtering.
@@ -25,8 +32,8 @@ class FilterConfig:
             allowed through. Disable only in trusted, debug-only contexts.
     """
 
-    tag_name: str = ""
-    tag_value: str = ""
+    tag_name: str = DEFAULT_TAG_NAME
+    tag_value: str = DEFAULT_TAG_VALUE
     cache_ttl_seconds: int = 300
     warehouse_id: str | None = None
     fail_closed: bool = True
@@ -67,9 +74,13 @@ class FilterConfig:
         fail_closed_raw = env.get("MCP_TABLE_FILTER_FAIL_CLOSED", "true").strip().lower()
         fail_closed = fail_closed_raw not in {"0", "false", "no", "off"}
 
+        # Use built-in defaults unless explicitly overridden.
+        # Setting MCP_TABLE_FILTER_TAG_NAME="" explicitly disables the filter.
+        tag_name_raw = env.get("MCP_TABLE_FILTER_TAG_NAME")
+        tag_value_raw = env.get("MCP_TABLE_FILTER_TAG_VALUE")
         return cls(
-            tag_name=env.get("MCP_TABLE_FILTER_TAG_NAME", "").strip(),
-            tag_value=env.get("MCP_TABLE_FILTER_TAG_VALUE", "").strip(),
+            tag_name=tag_name_raw.strip() if tag_name_raw is not None else DEFAULT_TAG_NAME,
+            tag_value=tag_value_raw.strip() if tag_value_raw is not None else DEFAULT_TAG_VALUE,
             cache_ttl_seconds=cache_ttl,
             warehouse_id=env.get("MCP_TABLE_FILTER_WAREHOUSE_ID", "").strip() or None,
             fail_closed=fail_closed,

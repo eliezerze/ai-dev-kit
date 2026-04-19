@@ -12,44 +12,43 @@
 
 ## Tag-Based Table Filtering
 
-When enabled, the MCP server will only let your AI assistant **see and query
-tables that carry a specific Unity Catalog tag**. Everything else is invisible
-and any SQL referencing other tables is rejected with a clear error.
+The MCP server only lets your AI assistant **see and query tables tagged
+`mcp-ready=yes`**. Everything else is invisible and any SQL referencing
+other tables is rejected with a clear error.
 
-**Quick start (recommended: `mcp-ready=yes`)**
+**This is on automatically — no env vars required.** Just install and go:
 
 ```bash
-# Install (Mac / Linux)
+# Mac / Linux
 bash <(curl -sL https://raw.githubusercontent.com/eliezerze/ai-dev-kit/main/install.sh)
-
-# Then export these env vars BEFORE starting your AI client (Cursor, Claude Code, ...)
-export MCP_TABLE_FILTER_TAG_NAME=mcp-ready
-export MCP_TABLE_FILTER_TAG_VALUE=yes
 ```
 
-The filter is **disabled by default**. If `MCP_TABLE_FILTER_TAG_NAME` is unset,
-the MCP server behaves identically to upstream.
-
-**All env vars (all optional)**
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `MCP_TABLE_FILTER_TAG_NAME` | _(unset, disables filter)_ | UC tag key to filter on |
-| `MCP_TABLE_FILTER_TAG_VALUE` | _(empty = match any value)_ | Required tag value |
-| `MCP_TABLE_FILTER_CACHE_TTL` | `300` | Allowlist cache TTL (seconds) |
-| `MCP_TABLE_FILTER_WAREHOUSE_ID` | _(auto-pick)_ | SQL warehouse used to query `system.information_schema.table_tags` |
-| `MCP_TABLE_FILTER_FAIL_CLOSED` | `true` | If `true`, unparseable SQL is rejected (recommended) |
-
-**How to tag a table:**
+**Tag a table to make it visible to the assistant:**
 
 ```sql
 ALTER TABLE main.my_schema.my_table SET TAGS ('mcp-ready' = 'yes');
 ```
 
+**Optional overrides via env vars** (only set these if you want to change the defaults):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `MCP_TABLE_FILTER_TAG_NAME` | `mcp-ready` | UC tag key to filter on. Set to empty (`""`) to disable filtering entirely. |
+| `MCP_TABLE_FILTER_TAG_VALUE` | `yes` | Required tag value. Set to empty (`""`) to match any value of the tag. |
+| `MCP_TABLE_FILTER_CACHE_TTL` | `300` | Allowlist cache TTL (seconds) |
+| `MCP_TABLE_FILTER_WAREHOUSE_ID` | _(auto-pick)_ | SQL warehouse used to query `system.information_schema.table_tags` |
+| `MCP_TABLE_FILTER_FAIL_CLOSED` | `true` | If `true`, unparseable SQL is rejected (recommended) |
+
 **What gets enforced:** every call to `execute_sql`, `execute_sql_multi`, and
 `get_table_stats_and_schema` validates the SQL / table list against the
 allowlist. `system.information_schema.*` is always allowed (so the filter can
 look itself up).
+
+**To turn the filter OFF entirely** (e.g. for a one-off debug session):
+
+```bash
+export MCP_TABLE_FILTER_TAG_NAME=""
+```
 
 ---
 > 🔒 Proactive Dependency Security  
