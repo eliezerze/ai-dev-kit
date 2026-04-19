@@ -1,13 +1,13 @@
 """Tag-based table filtering for the Databricks MCP server.
 
 Restricts every SQL execution and table-discovery tool to only those
-Unity Catalog tables that carry a configured tag. Driven by environment
-variables — see ``FilterConfig.from_env``.
+Unity Catalog tables that carry a configured tag.
 
-Disabled by default. To turn on, set::
+In this fork the filter is **on by default** with ``mcp-ready=yes`` —
+no environment variables are required. Override via env vars (see
+``FilterConfig.from_env``) or disable entirely with::
 
-    MCP_TABLE_FILTER_TAG_NAME=mcp-ready
-    MCP_TABLE_FILTER_TAG_VALUE=yes
+    MCP_TABLE_FILTER_TAG_NAME=""
 """
 
 from .config import FilterConfig
