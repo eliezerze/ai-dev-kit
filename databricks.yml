@@ -1,5 +1,5 @@
-# Databricks asset bundle definition for mcp_databricks_filtering.
-# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+# Databricks Asset Bundle definition for mcp_databricks_filtering.
+# https://docs.databricks.com/dev-tools/bundles/index.html
 bundle:
   name: mcp_databricks_filtering
 
@@ -13,10 +13,14 @@ artifacts:
     build: uv build --wheel
 
 variables:
+  workspace_host:
+    description: Databricks workspace URL (e.g. https://adb-xxxx.azuredatabricks.net)
   catalog:
-    description: The catalog to use
+    description: Default catalog
+    default: main
   schema:
-    description: The schema to use
+    description: Default schema
+    default: default
 
 targets:
   dev:
@@ -25,13 +29,12 @@ targets:
     workspace:
       host: ${var.workspace_host}
     variables:
-      catalog: main
       schema: ${workspace.current_user.short_name}
+
   prod:
     mode: production
     workspace:
       host: ${var.workspace_host}
       root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
     variables:
-      catalog: main
       schema: prod

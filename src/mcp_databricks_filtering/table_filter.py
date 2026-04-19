@@ -1,217 +1,234 @@
 """
 Tag-based table filtering for the Databricks MCP server.
 
-Restricts table discovery and SQL execution to only tables that have
-a specific UC tag (e.g., mcp-ready=yes). Configured via environment variables:
+Restricts table discovery and SQL execution to only tables that have a
+specific Unity Catalog tag (e.g. ``mcp-ready=yes``). Driven by environment
+variables, but the underlying primitives are also usable directly via
+:class:`FilterConfig` and :class:`AllowlistRepository` injection.
 
-  MCP_TABLE_FILTER_TAG_NAME   - tag key to filter on (e.g. "mcp-ready")
-  MCP_TABLE_FILTER_TAG_VALUE  - required tag value (e.g. "yes")
-  MCP_TABLE_FILTER_CACHE_TTL  - cache lifetime in seconds (default 300)
-
-When MCP_TABLE_FILTER_TAG_NAME is not set, filtering is disabled.
+Design notes
+------------
+- ``TableTagFilter`` is the orchestrator: cache + parse + decide.
+- The actual SDK call lives in :mod:`.repository` so unit tests can mock it.
+- SQL parsing lives in :mod:`.sql_parser` and uses sqlglot **scope** traversal
+  to correctly distinguish real tables from CTEs.
+- Defaults are *fail-closed*: unparseable SQL is rejected, not silently allowed.
 """
 
+from __future__ import annotations
+
 import logging
-import os
-import re
 import threading
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
-import sqlglot
-from sqlglot import exp
+from mcp_databricks_filtering.config import FilterConfig
+from mcp_databricks_filtering.repository import (
+    AllowlistRepository,
+    TableKey,
+    UnityCatalogTagsRepository,
+)
+from mcp_databricks_filtering.sql_parser import (
+    SQLParseFailure,
+    extract_real_tables,
+    is_show_query,
+    parse_show_target,
+)
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_CATALOGS = {"system"}
-SYSTEM_SCHEMAS = {"information_schema"}
+SYSTEM_CATALOGS = frozenset({"system"})
+SYSTEM_SCHEMAS = frozenset({"information_schema"})
+
+__all__ = ["TableTagFilter", "get_table_filter", "reset_singleton"]
 
 
 class TableTagFilter:
-    """Filters MCP table access based on Unity Catalog tags."""
+    """Filters MCP table access based on Unity Catalog tags.
 
-    def __init__(self):
-        self.tag_name = os.environ.get("MCP_TABLE_FILTER_TAG_NAME", "").strip()
-        self.tag_value = os.environ.get("MCP_TABLE_FILTER_TAG_VALUE", "").strip()
-        self.cache_ttl = int(os.environ.get("MCP_TABLE_FILTER_CACHE_TTL", "300"))
+    The class is safe to share across threads. Construction is cheap; the
+    expensive call (fetching the allowlist) is lazy and cached for
+    ``config.cache_ttl_seconds``.
 
-        self._cache: Optional[Set[Tuple[str, str, str]]] = None
+    Args:
+        config: configuration; if ``None``, built from env vars via
+            :meth:`FilterConfig.from_env`.
+        repository: implementation that returns the allowlist; if ``None``,
+            uses :class:`UnityCatalogTagsRepository` against the workspace
+            referenced by the ambient Databricks SDK config.
+    """
+
+    def __init__(
+        self,
+        config: FilterConfig | None = None,
+        repository: AllowlistRepository | None = None,
+    ):
+        self._config = config or FilterConfig.from_env()
+        self._repository = repository or UnityCatalogTagsRepository(
+            warehouse_id=self._config.warehouse_id
+        )
+
+        self._cache: frozenset[TableKey] | None = None
         self._cache_ts: float = 0.0
         self._cache_lock = threading.Lock()
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    @property
+    def config(self) -> FilterConfig:
+        return self._config
+
     @property
     def is_enabled(self) -> bool:
-        return bool(self.tag_name)
+        return self._config.is_enabled
 
-    def _is_cache_valid(self) -> bool:
-        return self._cache is not None and (time.time() - self._cache_ts) < self.cache_ttl
+    @property
+    def tag_name(self) -> str:
+        return self._config.tag_name
 
-    def get_allowed_tables(self, warehouse_id: Optional[str] = None) -> Set[Tuple[str, str, str]]:
-        """Return the set of (catalog, schema, table) tuples that pass the tag filter.
+    @property
+    def tag_value(self) -> str:
+        return self._config.tag_value
 
-        Results are cached for ``cache_ttl`` seconds.
+    @property
+    def cache_ttl(self) -> int:
+        return self._config.cache_ttl_seconds
+
+    def get_allowed_tables(self) -> frozenset[TableKey]:
+        """Return the set of allowed (catalog, schema, table) triples.
+
+        The result is a *frozen* set, so callers cannot accidentally mutate
+        the cache. Cached for ``config.cache_ttl_seconds``.
         """
         if not self.is_enabled:
-            return set()
+            return frozenset()
 
+        # Single critical section: avoids the thundering-herd problem where
+        # many threads simultaneously trigger a slow Databricks query when
+        # the cache expires. The trade-off is briefly serializing cache
+        # misses, which is acceptable for an admin-tier query.
         with self._cache_lock:
-            if self._is_cache_valid():
+            if self._is_cache_valid_locked():
                 return self._cache  # type: ignore[return-value]
 
-        allowed = self._query_allowed_tables(warehouse_id)
-
-        with self._cache_lock:
+            allowed = self._repository.fetch_allowed(
+                tag_name=self._config.tag_name,
+                tag_value=self._config.tag_value,
+            )
             self._cache = allowed
             self._cache_ts = time.time()
+            return allowed
 
-        return allowed
-
-    def _query_allowed_tables(self, warehouse_id: Optional[str] = None) -> Set[Tuple[str, str, str]]:
-        from databricks.sdk import WorkspaceClient
-
-        w = WorkspaceClient()
-
-        conditions = [f"tag_name = '{self.tag_name}'"]
-        if self.tag_value:
-            conditions.append(f"tag_value = '{self.tag_value}'")
-        where = " AND ".join(conditions)
-
-        sql = (
-            "SELECT catalog_name, schema_name, table_name "
-            f"FROM system.information_schema.table_tags WHERE {where}"
-        )
-        logger.info("Querying allowed tables: %s", sql)
-
-        result: Set[Tuple[str, str, str]] = set()
-        with w.statement_execution.execute_and_wait(
-            warehouse_id=warehouse_id or self._get_warehouse_id(w),
-            statement=sql,
-        ) as response:
-            if response.result and response.result.data_array:
-                for row in response.result.data_array:
-                    cat = (row[0] or "").lower()
-                    sch = (row[1] or "").lower()
-                    tbl = (row[2] or "").lower()
-                    if cat and sch and tbl:
-                        result.add((cat, sch, tbl))
-
-        logger.info("Allowed tables (%d): %s", len(result), result)
-        return result
-
-    @staticmethod
-    def _get_warehouse_id(w) -> str:
-        """Find the first available SQL warehouse."""
-        warehouses = list(w.warehouses.list())
-        if not warehouses:
-            raise RuntimeError("No SQL warehouses available")
-        running = [wh for wh in warehouses if wh.state and wh.state.value == "RUNNING"]
-        chosen = running[0] if running else warehouses[0]
-        return chosen.id
-
-    def refresh_cache(self, warehouse_id: Optional[str] = None) -> Set[Tuple[str, str, str]]:
-        """Force-refresh the cache and return the new allowlist."""
+    def refresh_cache(self) -> frozenset[TableKey]:
+        """Drop the cache and re-fetch the allowlist."""
         with self._cache_lock:
             self._cache = None
             self._cache_ts = 0.0
-        return self.get_allowed_tables(warehouse_id)
+        return self.get_allowed_tables()
 
     def is_table_allowed(
         self,
-        catalog: Optional[str],
-        schema: Optional[str],
+        catalog: str | None,
+        schema: str | None,
         table: str,
-        warehouse_id: Optional[str] = None,
     ) -> bool:
         if not self.is_enabled:
             return True
-
-        if self._is_system_ref(catalog, schema, table):
+        if _is_system_ref(catalog, schema, table):
             return True
-
-        allowed = self.get_allowed_tables(warehouse_id)
-        return self._match_table(catalog, schema, table, allowed)
+        return _match_table(catalog, schema, table, self.get_allowed_tables())
 
     def filter_table_list(
         self,
-        tables: List[Dict[str, Any]],
+        tables: list[dict[str, Any]],
         catalog: str,
         schema: str,
-        warehouse_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Filter a list of table-info dicts to only those in the allowlist."""
+    ) -> list[dict[str, Any]]:
+        """Filter table-info dicts to only those in the allowlist."""
         if not self.is_enabled:
             return tables
 
-        allowed = self.get_allowed_tables(warehouse_id)
+        allowed = self.get_allowed_tables()
         cat_lower = catalog.lower()
         sch_lower = schema.lower()
         return [
             t for t in tables
-            if (cat_lower, sch_lower, t["name"].lower()) in allowed
+            if (cat_lower, sch_lower, str(t.get("name", "")).lower()) in allowed
         ]
 
     def validate_sql(
         self,
         sql_query: str,
-        catalog_context: Optional[str] = None,
-        schema_context: Optional[str] = None,
-        warehouse_id: Optional[str] = None,
+        catalog_context: str | None = None,
+        schema_context: str | None = None,
     ) -> None:
-        """Raise ``PermissionError`` if the SQL references any non-allowed table."""
+        """Raise ``PermissionError`` if ``sql_query`` references blocked tables.
+
+        With ``fail_closed=True`` (default), unparseable SQL is rejected.
+        With ``fail_closed=False``, it is allowed (use only in trusted contexts).
+        """
         if not self.is_enabled:
             return
 
-        table_refs = self._extract_table_refs(sql_query)
-        if not table_refs:
+        try:
+            refs = extract_real_tables(sql_query)
+        except SQLParseFailure as exc:
+            if self._config.fail_closed:
+                raise PermissionError(
+                    "Access denied: SQL could not be parsed for safety validation. "
+                    f"Reason: {exc}"
+                ) from exc
             return
 
-        allowed = self.get_allowed_tables(warehouse_id)
-        cte_names = self._extract_cte_names(sql_query)
-        blocked: List[str] = []
+        if not refs:
+            return
 
-        for cat, sch, tbl in table_refs:
-            if tbl.lower() in cte_names:
+        allowed = self.get_allowed_tables()
+        blocked: list[str] = []
+
+        for ref in refs:
+            resolved_cat = ref.catalog or catalog_context
+            resolved_sch = ref.schema or schema_context
+
+            if _is_system_ref(resolved_cat, resolved_sch, ref.table):
+                continue
+            if _match_table(resolved_cat, resolved_sch, ref.table, allowed):
                 continue
 
-            resolved_cat = cat or catalog_context
-            resolved_sch = sch or schema_context
-
-            if self._is_system_ref(resolved_cat, resolved_sch, tbl):
-                continue
-
-            if not self._match_table(resolved_cat, resolved_sch, tbl, allowed):
-                fqn = ".".join(filter(None, [resolved_cat, resolved_sch, tbl]))
-                blocked.append(fqn)
+            fqn = ".".join(filter(None, [resolved_cat, resolved_sch, ref.table]))
+            blocked.append(fqn)
 
         if blocked:
+            tag_repr = (
+                f"{self._config.tag_name}={self._config.tag_value}"
+                if self._config.tag_value
+                else self._config.tag_name
+            )
             raise PermissionError(
                 f"Access denied. The following tables are not tagged with "
-                f"'{self.tag_name}={self.tag_value}': {', '.join(blocked)}. "
-                f"Only tables with this tag are accessible via this MCP server."
+                f"'{tag_repr}': {', '.join(blocked)}. "
+                "Only tables with this tag are accessible via this MCP server."
             )
 
     def filter_show_results(
         self,
         sql_query: str,
-        rows: List[Dict[str, Any]],
-        catalog_context: Optional[str] = None,
-        schema_context: Optional[str] = None,
-        warehouse_id: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Filter the output of SHOW TABLES / SHOW VIEWS to only allowed tables."""
-        if not self.is_enabled or not rows:
+        rows: list[dict[str, Any]],
+        catalog_context: str | None = None,
+        schema_context: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Filter the output of SHOW TABLES / SHOW VIEWS to allowed tables only."""
+        if not self.is_enabled or not rows or not is_show_query(sql_query):
             return rows
 
-        if not self._is_show_tables_query(sql_query):
-            return rows
-
-        allowed = self.get_allowed_tables(warehouse_id)
-
-        show_cat, show_sch = self._parse_show_target(sql_query)
+        allowed = self.get_allowed_tables()
+        show_cat, show_sch = parse_show_target(sql_query)
         cat = (show_cat or catalog_context or "").lower()
         sch = (show_sch or schema_context or "").lower()
 
-        filtered = []
+        filtered: list[dict[str, Any]] = []
         for row in rows:
             table_name = (
                 row.get("tableName")
@@ -225,118 +242,79 @@ class TableTagFilter:
                 continue
             if (cat, sch, table_name) in allowed:
                 filtered.append(row)
-
         return filtered
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Internal
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _is_show_tables_query(sql_query: str) -> bool:
-        normalized = sql_query.strip().upper()
-        return any(
-            normalized.startswith(prefix)
-            for prefix in ("SHOW TABLES", "SHOW VIEWS", "SHOW TBLPROPERTIES")
+    def _is_cache_valid_locked(self) -> bool:
+        return (
+            self._cache is not None
+            and (time.time() - self._cache_ts) < self._config.cache_ttl_seconds
         )
 
-    @staticmethod
-    def _parse_show_target(sql_query: str) -> Tuple[Optional[str], Optional[str]]:
-        """Extract catalog and schema from 'SHOW TABLES IN catalog.schema'."""
-        match = re.search(r"(?:IN|FROM)\s+(\S+)", sql_query, re.IGNORECASE)
-        if not match:
-            return None, None
-        target = match.group(1).strip("`\"'")
-        parts = target.split(".")
-        if len(parts) >= 2:
-            return parts[0], parts[1]
-        return None, parts[0]
 
-    @staticmethod
-    def _is_system_ref(
-        catalog: Optional[str], schema: Optional[str], table: str
-    ) -> bool:
-        if catalog and catalog.lower() in SYSTEM_CATALOGS:
-            return True
-        if schema and schema.lower() in SYSTEM_SCHEMAS:
-            return True
-        if table.lower().startswith("information_schema"):
-            return True
-        return False
-
-    @staticmethod
-    def _match_table(
-        catalog: Optional[str],
-        schema: Optional[str],
-        table: str,
-        allowed: Set[Tuple[str, str, str]],
-    ) -> bool:
-        tbl_lower = table.lower()
-
-        if catalog and schema:
-            return (catalog.lower(), schema.lower(), tbl_lower) in allowed
-
-        for a_cat, a_sch, a_tbl in allowed:
-            if a_tbl != tbl_lower:
-                continue
-            if schema and a_sch != schema.lower():
-                continue
-            if catalog and a_cat != catalog.lower():
-                continue
-            return True
-        return False
-
-    @staticmethod
-    def _is_data_statement(stmt) -> bool:
-        """Return True if the statement is a DML/query that references real tables."""
-        _SKIP_TYPES = (exp.Use, exp.Set, exp.Command, exp.Show)
-        return not isinstance(stmt, _SKIP_TYPES)
-
-    @staticmethod
-    def _extract_table_refs(sql_query: str) -> List[Tuple[Optional[str], Optional[str], str]]:
-        refs: List[Tuple[Optional[str], Optional[str], str]] = []
-        try:
-            for stmt in sqlglot.parse(sql_query, dialect="databricks"):
-                if stmt is None:
-                    continue
-                if not TableTagFilter._is_data_statement(stmt):
-                    continue
-                for tbl in stmt.find_all(exp.Table):
-                    name = tbl.name
-                    if not name:
-                        continue
-                    catalog = tbl.catalog or None
-                    schema = tbl.db or None
-                    refs.append((catalog, schema, name))
-        except sqlglot.errors.ParseError:
-            logger.warning("Failed to parse SQL for table refs: %s", sql_query[:200])
-        return refs
-
-    @staticmethod
-    def _extract_cte_names(sql_query: str) -> Set[str]:
-        cte_names: Set[str] = set()
-        try:
-            for stmt in sqlglot.parse(sql_query, dialect="databricks"):
-                if stmt is None:
-                    continue
-                for cte in stmt.find_all(exp.CTE):
-                    alias = cte.alias
-                    if alias:
-                        cte_names.add(alias.lower())
-        except sqlglot.errors.ParseError:
-            pass
-        return cte_names
+# ----------------------------------------------------------------------
+# Module-level helpers
+# ----------------------------------------------------------------------
 
 
-_filter: Optional[TableTagFilter] = None
-_filter_lock = threading.Lock()
+def _is_system_ref(
+    catalog: str | None, schema: str | None, table: str
+) -> bool:
+    if catalog and catalog.lower() in SYSTEM_CATALOGS:
+        return True
+    if schema and schema.lower() in SYSTEM_SCHEMAS:
+        return True
+    return table.lower().startswith("information_schema")
+
+
+def _match_table(
+    catalog: str | None,
+    schema: str | None,
+    table: str,
+    allowed: frozenset[TableKey],
+) -> bool:
+    tbl_lower = table.lower()
+    if catalog and schema:
+        return (catalog.lower(), schema.lower(), tbl_lower) in allowed
+
+    for a_cat, a_sch, a_tbl in allowed:
+        if a_tbl != tbl_lower:
+            continue
+        if schema and a_sch != schema.lower():
+            continue
+        if catalog and a_cat != catalog.lower():
+            continue
+        return True
+    return False
+
+
+# ----------------------------------------------------------------------
+# Singleton (module-level, lazy, thread-safe via double-checked locking)
+# ----------------------------------------------------------------------
+
+_singleton: TableTagFilter | None = None
+_singleton_lock = threading.Lock()
 
 
 def get_table_filter() -> TableTagFilter:
-    """Return the global TableTagFilter singleton."""
-    global _filter
-    if _filter is None:
-        with _filter_lock:
-            if _filter is None:
-                _filter = TableTagFilter()
-    return _filter
+    """Return the process-wide :class:`TableTagFilter` singleton.
+
+    The singleton is created lazily from environment variables. Tests that
+    need a different config should call :func:`reset_singleton` first.
+    """
+    global _singleton
+    if _singleton is None:
+        with _singleton_lock:
+            if _singleton is None:
+                _singleton = TableTagFilter()
+    return _singleton
+
+
+def reset_singleton() -> None:
+    """Drop the cached singleton — primarily for tests."""
+    global _singleton
+    with _singleton_lock:
+        _singleton = None

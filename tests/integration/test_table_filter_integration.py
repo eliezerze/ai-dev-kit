@@ -2,51 +2,78 @@
 Integration tests for the MCP tag-based table filter.
 
 Two test categories:
-  - "offline" tests: validate filtering logic without Databricks connection
-  - "online" tests: connect to real Databricks workspace to verify
-    the full flow against actual tagged tables
+  * **offline** — pure logic, uses an in-memory fake repository (no SDK calls).
+  * **online**  — connects to a real Databricks workspace; marked with
+    ``@pytest.mark.online`` so it can be skipped via ``-m "not online"``.
 
-Run offline tests only (no auth needed):
-    uv run pytest tests/integration/ -v -k "not online"
+Run offline only::
 
-Run all tests (requires valid Databricks auth):
-    uv run pytest tests/integration/ -v
+    uv run pytest tests/integration/ -m "not online"
+
+Run everything (requires valid Databricks auth)::
+
+    uv run pytest tests/integration/
 """
+
+from __future__ import annotations
 
 import os
 import time
+from collections.abc import Iterable
 
 import pytest
 
+from mcp_databricks_filtering.config import FilterConfig
+from mcp_databricks_filtering.repository import TableKey
 from mcp_databricks_filtering.table_filter import TableTagFilter
 
-os.environ.setdefault("MCP_TABLE_FILTER_TAG_NAME", "mcp-ready")
-os.environ.setdefault("MCP_TABLE_FILTER_TAG_VALUE", "yes")
-os.environ.setdefault("MCP_TABLE_FILTER_CACHE_TTL", "60")
+# ── Test config ───────────────────────────────────────────────────────────
 
 KNOWN_TAGGED_CATALOG = os.environ.get("TEST_TAGGED_CATALOG", "main")
 KNOWN_TAGGED_SCHEMA = os.environ.get("TEST_TAGGED_SCHEMA", "eod")
 KNOWN_TAGGED_TABLE = os.environ.get("TEST_TAGGED_TABLE", "delta_bronze_analystratings")
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────
-
-def _make_filter_with_fake_cache(tables):
-    """Return a TableTagFilter pre-loaded with a fake allowlist (no Databricks call)."""
-    f = TableTagFilter()
-    f._cache = {(c.lower(), s.lower(), t.lower()) for c, s, t in tables}
-    f._cache_ts = time.time()
-    return f
+DEFAULT_CONFIG = FilterConfig(
+    tag_name="mcp-ready",
+    tag_value="yes",
+    cache_ttl_seconds=60,
+)
 
 
-# ── Offline tests (no Databricks connection needed) ───────────────────────
+# ── Test helpers ──────────────────────────────────────────────────────────
+
+
+class FakeRepository:
+    """In-memory repository for offline tests."""
+
+    def __init__(self, tables: Iterable[TableKey]):
+        self._tables = frozenset((c.lower(), s.lower(), t.lower()) for c, s, t in tables)
+        self.fetch_count = 0
+
+    def fetch_allowed(self, tag_name: str, tag_value: str) -> frozenset[TableKey]:
+        self.fetch_count += 1
+        return self._tables
+
+
+def _make_filter(tables: Iterable[TableKey], **config_overrides) -> TableTagFilter:
+    config = FilterConfig(
+        tag_name=config_overrides.pop("tag_name", "mcp-ready"),
+        tag_value=config_overrides.pop("tag_value", "yes"),
+        cache_ttl_seconds=config_overrides.pop("cache_ttl_seconds", 60),
+        **config_overrides,
+    )
+    return TableTagFilter(config=config, repository=FakeRepository(tables))
+
+
+# ── Offline tests ─────────────────────────────────────────────────────────
+
 
 class TestFilterLogicOffline:
-    """Pure-logic tests using a fake allowlist."""
+    """Pure-logic tests using the fake repository."""
 
     @pytest.fixture()
     def f(self):
-        return _make_filter_with_fake_cache([
+        return _make_filter([
             ("main", "eod", "delta_bronze_analystratings"),
             ("main", "eod", "delta_bronze_price"),
             ("prod", "finance", "transactions"),
@@ -71,26 +98,30 @@ class TestFilterLogicOffline:
 
     def test_filter_table_list(self, f: TableTagFilter):
         tables = [
-            {"name": "delta_bronze_analystratings", "updated_at": None, "comment": None},
-            {"name": "delta_bronze_price", "updated_at": None, "comment": None},
-            {"name": "some_other_table", "updated_at": None, "comment": None},
+            {"name": "delta_bronze_analystratings"},
+            {"name": "delta_bronze_price"},
+            {"name": "some_other_table"},
         ]
         result = f.filter_table_list(tables, "main", "eod")
         names = [t["name"] for t in result]
-        assert "delta_bronze_analystratings" in names
-        assert "delta_bronze_price" in names
-        assert "some_other_table" not in names
+        assert names == ["delta_bronze_analystratings", "delta_bronze_price"]
 
     def test_filter_empty_list(self, f: TableTagFilter):
         assert f.filter_table_list([], "main", "eod") == []
 
+    def test_get_allowed_tables_returns_frozenset(self, f: TableTagFilter):
+        result = f.get_allowed_tables()
+        assert isinstance(result, frozenset)
+        with pytest.raises(AttributeError):
+            result.add(("a", "b", "c"))  # type: ignore[attr-defined]
+
 
 class TestSQLValidationOffline:
-    """SQL parsing/validation tests using a fake allowlist."""
+    """SQL parsing/validation tests."""
 
     @pytest.fixture()
     def f(self):
-        return _make_filter_with_fake_cache([
+        return _make_filter([
             ("main", "eod", "delta_bronze_analystratings"),
             ("main", "eod", "delta_bronze_price"),
         ])
@@ -158,13 +189,24 @@ class TestSQLValidationOffline:
         with pytest.raises(PermissionError, match="Access denied"):
             f.validate_sql(sql)
 
+    def test_unparseable_sql_fails_closed_by_default(self, f: TableTagFilter):
+        with pytest.raises(PermissionError, match="could not be parsed"):
+            f.validate_sql("THIS IS NOT VALID SQL @@@@ ;;;;")
+
+    def test_unparseable_sql_passes_when_fail_open(self):
+        f = _make_filter(
+            [("main", "eod", "x")],
+            fail_closed=False,
+        )
+        f.validate_sql("THIS IS NOT VALID SQL @@@@ ;;;;")
+
 
 class TestShowTablesFilteringOffline:
     """Test that SHOW TABLES output is filtered to only allowed tables."""
 
     @pytest.fixture()
     def f(self):
-        return _make_filter_with_fake_cache([
+        return _make_filter([
             ("main", "eod", "delta_bronze_analystratings"),
             ("main", "eod", "delta_bronze_price"),
         ])
@@ -181,9 +223,7 @@ class TestShowTablesFilteringOffline:
         assert names == ["delta_bronze_analystratings", "delta_bronze_price"]
 
     def test_show_tables_case_insensitive(self, f: TableTagFilter):
-        rows = [
-            {"tableName": "Delta_Bronze_AnalystRatings", "isTemporary": False},
-        ]
+        rows = [{"tableName": "Delta_Bronze_AnalystRatings", "isTemporary": False}]
         filtered = f.filter_show_results("SHOW TABLES IN main.eod", rows)
         assert len(filtered) == 1
 
@@ -211,45 +251,81 @@ class TestShowTablesFilteringOffline:
 
 
 class TestCacheBehaviorOffline:
-    """Cache logic tests without Databricks connection."""
+    """Cache logic tests using the fake repository's call counter."""
 
-    def test_cache_hit(self):
-        f = _make_filter_with_fake_cache([("main", "eod", "t1")])
-        result1 = f.get_allowed_tables()
-        result2 = f.get_allowed_tables()
-        assert result1 is result2
+    def test_cache_hit_avoids_repository_call(self):
+        repo = FakeRepository([("main", "eod", "t1")])
+        f = TableTagFilter(config=DEFAULT_CONFIG, repository=repo)
+        f.get_allowed_tables()
+        f.get_allowed_tables()
+        f.get_allowed_tables()
+        assert repo.fetch_count == 1
 
-    def test_cache_expiry(self):
-        f = _make_filter_with_fake_cache([("main", "eod", "t1")])
-        f.cache_ttl = 0
-        f._cache_ts = time.time() - 1
-        assert not f._is_cache_valid()
+    def test_refresh_cache_re_fetches(self):
+        repo = FakeRepository([("main", "eod", "t1")])
+        f = TableTagFilter(config=DEFAULT_CONFIG, repository=repo)
+        f.get_allowed_tables()
+        f.refresh_cache()
+        assert repo.fetch_count == 2
+
+    def test_cache_expiry_triggers_refetch(self):
+        repo = FakeRepository([("main", "eod", "t1")])
+        f = TableTagFilter(
+            config=FilterConfig(tag_name="mcp-ready", cache_ttl_seconds=0),
+            repository=repo,
+        )
+        f.get_allowed_tables()
+        time.sleep(0.01)
+        f.get_allowed_tables()
+        assert repo.fetch_count == 2
 
 
 class TestFilterDisabled:
-    """Verify behavior when filtering env vars are not set."""
+    """Behavior when no tag is configured."""
 
     def test_disabled_filter_allows_everything(self):
-        saved = os.environ.pop("MCP_TABLE_FILTER_TAG_NAME", None)
-        try:
-            disabled_filter = TableTagFilter()
-            assert not disabled_filter.is_enabled
-            assert disabled_filter.is_table_allowed("any", "catalog", "table")
-            disabled_filter.validate_sql("SELECT * FROM anything.goes.here")
-            assert disabled_filter.filter_table_list(
-                [{"name": "foo"}], "c", "s"
-            ) == [{"name": "foo"}]
-        finally:
-            if saved:
-                os.environ["MCP_TABLE_FILTER_TAG_NAME"] = saved
+        f = TableTagFilter(config=FilterConfig())
+        assert not f.is_enabled
+        assert f.is_table_allowed("any", "catalog", "table")
+        f.validate_sql("SELECT * FROM anything.goes.here")
+        assert f.filter_table_list([{"name": "foo"}], "c", "s") == [{"name": "foo"}]
 
 
-# ── Online tests (require valid Databricks auth) ─────────────────────────
+class TestConfigValidation:
+    """FilterConfig should reject obviously bad input."""
+
+    def test_invalid_tag_name_rejected(self):
+        with pytest.raises(ValueError, match="Invalid tag_name"):
+            FilterConfig(tag_name="bad name with spaces; DROP TABLE x;")
+
+    def test_negative_ttl_rejected(self):
+        with pytest.raises(ValueError, match="cache_ttl_seconds"):
+            FilterConfig(tag_name="mcp-ready", cache_ttl_seconds=-1)
+
+    def test_invalid_ttl_env_rejected(self):
+        with pytest.raises(ValueError, match="must be an integer"):
+            FilterConfig.from_env({"MCP_TABLE_FILTER_CACHE_TTL": "not-a-number"})
+
+    def test_from_env_defaults(self):
+        config = FilterConfig.from_env({})
+        assert config.tag_name == ""
+        assert config.cache_ttl_seconds == 300
+        assert config.fail_closed is True
+
+    def test_from_env_fail_closed_can_be_disabled(self):
+        config = FilterConfig.from_env({"MCP_TABLE_FILTER_FAIL_CLOSED": "false"})
+        assert config.fail_closed is False
+
+
+# ── Online tests ──────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="module")
 def online_filter() -> TableTagFilter:
-    """Create a filter that queries real Databricks."""
-    return TableTagFilter()
+    config = FilterConfig.from_env()
+    if not config.is_enabled:
+        config = FilterConfig(tag_name="mcp-ready", tag_value="yes", cache_ttl_seconds=60)
+    return TableTagFilter(config=config)
 
 
 @pytest.fixture(scope="module")
@@ -285,8 +361,8 @@ class TestFilterOnline:
 
     def test_filter_real_tables(self, online_filter: TableTagFilter):
         fake_tables = [
-            {"name": KNOWN_TAGGED_TABLE, "updated_at": None, "comment": None},
-            {"name": "this_table_should_not_exist_xyz", "updated_at": None, "comment": None},
+            {"name": KNOWN_TAGGED_TABLE},
+            {"name": "this_table_should_not_exist_xyz"},
         ]
         filtered = online_filter.filter_table_list(
             fake_tables, KNOWN_TAGGED_CATALOG, KNOWN_TAGGED_SCHEMA
@@ -302,22 +378,6 @@ class TestFilterOnline:
     def test_validate_blocked_sql(self, online_filter: TableTagFilter):
         with pytest.raises(PermissionError, match="Access denied"):
             online_filter.validate_sql(
-                "SELECT * FROM main.eod.this_table_should_not_exist_xyz"
+                f"SELECT * FROM {KNOWN_TAGGED_CATALOG}.{KNOWN_TAGGED_SCHEMA}"
+                ".this_table_should_not_exist_xyz"
             )
-
-
-@pytest.mark.online
-class TestCacheOnline:
-
-    def test_second_call_uses_cache(self, online_filter: TableTagFilter):
-        online_filter.refresh_cache()
-
-        start = time.time()
-        online_filter.get_allowed_tables()
-        first_duration = time.time() - start
-
-        start = time.time()
-        online_filter.get_allowed_tables()
-        second_duration = time.time() - start
-
-        assert second_duration < first_duration or second_duration < 0.01
