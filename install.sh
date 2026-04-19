@@ -242,8 +242,8 @@ if [ "${LIST_SKILLS:-false}" = true ]; then
 fi
 
 # Set configuration URLs after parsing branch argument
-REPO_URL="https://github.com/databricks-solutions/ai-dev-kit.git"
-RAW_URL="https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/${BRANCH}"
+REPO_URL="https://github.com/${OWNER}/${REPO}.git"
+RAW_URL="https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}"
 INSTALL_DIR="${AIDEVKIT_HOME:-$HOME/.ai-dev-kit}"
 REPO_DIR="$INSTALL_DIR/repo"
 VENV_DIR="$INSTALL_DIR/.venv"
@@ -1044,6 +1044,9 @@ setup_mcp() {
     
     # Clone or update repo
     if [ -d "$REPO_DIR/.git" ]; then
+        # Make sure the existing checkout is pointing at the configured fork —
+        # otherwise re-installs silently keep pulling from the original origin.
+        git -C "$REPO_DIR" remote set-url origin "$REPO_URL" 2>/dev/null || true
         git -C "$REPO_DIR" fetch -q --depth 1 origin "$BRANCH" 2>/dev/null || true
         git -C "$REPO_DIR" reset --hard FETCH_HEAD 2>/dev/null || {
             rm -rf "$REPO_DIR"
